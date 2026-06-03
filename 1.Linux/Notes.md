@@ -1,456 +1,407 @@
-# Linux Foundations
+# Linux DevSecOps — Study Notes
  
- 
-## 📺 Theory — Linux Foundations
- 
-### What is Linux and Why DevSecOps Engineers Live in the Terminal
- 
-Linux is a free, open-source operating system that powers the vast majority of web servers, cloud infrastructure, and security tools. As a DevSecOps engineer, nearly everything you interact with — containers, servers, CI/CD pipelines, firewalls — runs on Linux.
- 
-Unlike Windows (which uses a GUI-first design), Linux is **terminal-first**. The terminal gives you precise, scriptable, auditable control over the system. That's why security professionals live in it.
- 
-**Key Distributions to Know:**
- 
-| Distro | Used For | Package Manager | Notes |
-|--------|----------|----------------|-------|
-| **Ubuntu** | Learning, dev environments, cloud | `apt` | Beginner-friendly, large community |
-| **RHEL / CentOS** | Enterprise production servers | `yum` / `dnf` | Paid support, used in large orgs |
-| **Debian** | Stable servers, base for Ubuntu | `apt` | Rock-solid, minimal |
-| **Kali Linux** | Penetration testing | `apt` | Pre-loaded with security tools |
-| **Alpine** | Docker containers | `apk` | Ultra-minimal, ~5MB image |
- 
-> 💡 **For this course:** Ubuntu 22.04 LTS is recommended.
- 
-> 🧠 **Why it matters:** RHEL-family syntax (like `yum install`) differs from Debian-family (`apt install`). You will encounter both in the real world.
+> **Sources:** The Linux Command Line (7th Ed.) · Adventures with the Command Line (1st Ed.) · UNIX & Linux System Administration Handbook (5th Ed.)
  
 ---
  
-## 🗂️ The Linux Filesystem Hierarchy
+## Day 1 — Monday
+### Linux Foundations: The Shell & Filesystem
+**Tags:** `#linux-basics` `#cpp-setup` `#day1`
+**Schedule:** 08:00–10:00 Theory | 10:00–12:00 Hands-On Labs
  
-Unlike Windows (which uses `C:\`, `D:\` drive letters), Linux organizes **everything** under one single tree starting at `/` (called **root**).
+---
  
-> **Core concept:** In Linux, *"everything is a file"* — hardware devices, processes, even network sockets are represented as files.
+### What Is the Shell?
  
+The **shell** is a program that reads keyboard commands and passes them to the operating system. Almost all Linux distributions use **bash** (Bourne Again SHell) — an enhanced version of the original Unix shell written by Steve Bourne.
+ 
+**Why DevSecOps engineers live in the terminal:** The CLI gives you direct, scriptable, and auditable access to every system resource. GUIs make easy tasks easy; the command line makes hard tasks *possible*.
+ 
+**Shell prompt anatomy:**
 ```
-/                        ← Root of everything
-├── etc/                 ← System config (passwd, shadow, sudoers)
-├── var/
-│   └── log/             ← Audit logs (auth.log, syslog)
-├── home/
-│   └── yourname/        ← Your personal files
-├── root/                ← Root user's home (separate from /home)
-├── tmp/                 ← World-writable temp space ⚠️
-├── usr/
-│   └── bin/             ← Standard user commands (ls, grep, cat)
-├── sbin/                ← Root-only system binaries
-├── proc/                ← Live process info (RAM only)
-└── dev/                 ← Device files (hard drives, USB, etc.)
+username@hostname ~$    ← regular user
+root@hostname    ~#    ← root / superuser
 ```
  
-### Critical Directories & Their Security Relevance
+**Key keyboard shortcuts:**
+```
+↑ / ↓      scroll command history
+Ctrl-R     reverse-search history
+Ctrl-C     interrupt / kill running command
+Ctrl-D     logout / end of input
+Tab        auto-complete paths & commands
+```
+ 
+> *Source: The Linux Command Line, 7th Ed., Ch. 1 — "What Is the Shell?"*
+ 
+---
+ 
+### Linux Distributions — Why It Matters for DevSecOps
+ 
+| Distro Family | Examples | Package Manager | Common Use Case |
+|---|---|---|---|
+| **Debian** | Ubuntu, Kali | `apt` / `dpkg` | Cloud instances, security labs |
+| **Red Hat** | RHEL, CentOS, Rocky | `yum` / `dnf` / `rpm` | Enterprise servers, STIG compliance |
+| **Arch** | Arch, Manjaro | `pacman` | Rolling release, developer desktops |
+ 
+> **DevSecOps relevance:** Most cloud servers run Ubuntu or RHEL variants. Security tools like Metasploit ship on Kali (Debian). Know `apt` and `dnf/yum` — you will encounter both.
+ 
+> *Source: UNIX and Linux System Administration Handbook, 5th Ed., Ch. 1 — "Linux Distributions"*
+ 
+---
+ 
+### Linux Filesystem Hierarchy — Security Map
+ 
+Linux uses a **single-rooted tree** starting at `/`. Unlike Windows, there are no drive letters — all storage is mounted onto this one tree.
  
 | Directory | Purpose | Security Relevance |
-|-----------|---------|-------------------|
-| `/` | Root of the entire filesystem | Only `root` user can write here |
-| `/etc` | System configuration files | Contains `passwd`, `shadow`, `sudoers` — the nerve center |
-| `/etc/passwd` | Local user account info | **World-readable** — attackers use it to enumerate valid users |
-| `/etc/shadow` | Hashed user passwords | **Root-only** — stores password hashes to prevent cracking |
-| `/etc/sudoers` | Sudo privilege rules | Misconfiguration = instant privilege escalation |
-| `/var/log` | System & application logs | Your **audit trail** — never delete; attackers try to wipe `auth.log` |
-| `/home` | User home directories | Sensitive files (`.ssh/id_rsa`, `.bashrc`) live here |
-| `/root` | Root user's home | Strictly locked down — admin's private configs |
-| `/tmp` | Temporary files | **World-writable** — attacker playground; common malware staging area |
-| `/usr/bin` | User command binaries | Where `ls`, `grep`, `cat` live — watch for Trojanized replacements |
-| `/sbin` | System admin binaries | Root-only tools like `iptables`, `fdisk` |
-| `/proc` | Virtual process filesystem | Exists only in RAM — real-time system state, useful for hunting malware |
-| `/dev` | Device files | Raw hardware access (e.g., `/dev/sda` = your hard drive) |
+|---|---|---|
+| `/etc` | System-wide configuration files | Contains `passwd`, `shadow`, `sudoers`, `group` — the crown jewels of access control |
+| `/var/log` | Log files (syslog, auth.log, etc.) | Your audit trail — never delete; monitor for intrusion indicators |
+| `/home` | User home directories | Where sensitive user data lives; default landing after SSH login |
+| `/tmp` | Temporary files (world-writable) | **World-writable — attacker playground;** often used for exploit staging |
+| `/proc` | Virtual FS: real-time process/kernel info | Live system state; `/proc/net` shows connections; useful for forensics |
+| `/usr/bin` | User-installed executables | Where most system commands live — check for rogue binaries |
+| `/bin` | Essential command binaries (boot-time) | `ls`, `cp`, `bash` — required even before `/usr` is mounted |
+| `/sbin` | System administration binaries | Root-level tools: `iptables`, `ifconfig`, `fsck` |
+| `/dev` | Device files (block & char devices) | Access controlled via filesystem permissions; `/dev/null`, `/dev/sda` |
+| `/root` | Root user's home directory | Only root can enter; never expose via web or shared mounts |
  
-> 🔐 **Security Instinct:** Always ask — *"Who can read this? Who can write here?"* That question is the foundation of Linux security.
+> *Source: TLCL 7th Ed., Ch. 3 "Exploring the System"; ULSAH 5th Ed., Ch. 5 "The Filesystem"*
  
 ---
  
-## 💻 Hands-On Labs — Linux CLI Foundations
+### Core Navigation Commands
  
-### Setup
-- Install **Ubuntu 22.04 LTS** via VirtualBox, OR
-- Enable **WSL2** on Windows: open PowerShell as Admin → `wsl --install` → restart
-> 💡 **WSL2 Tip:** After install, find Ubuntu in your Start menu. Your Windows files are accessible at `/mnt/c/Users/YourName/`.
+**pwd** — Print Working Directory
+```bash
+$ pwd
+→ /home/alice
+```
+ 
+**ls** — List directory contents
+```bash
+$ ls -la /etc
+# -l long format, -a show hidden files
+```
+ 
+**cd** — Change Directory (`cd` alone = home, `cd -` = previous dir)
+```bash
+$ cd /var/log
+$ cd ~         # home dir
+$ cd ..        # parent dir
+```
+ 
+**file** — Determine file type (doesn't rely on extension)
+```bash
+$ file /bin/bash
+→ ELF 64-bit LSB executable
+```
+ 
+**less** — Scroll through file contents (`q` to quit, `/term` to search)
+```bash
+$ less /var/log/auth.log
+```
+ 
+**cat / head / tail** — Print file contents. `tail -f` follows log files live
+```bash
+$ tail -f /var/log/syslog    # live monitoring!
+$ head -n 20 /etc/passwd     # first 20 lines
+```
+ 
+**Absolute vs Relative Paths:**
+```bash
+# Absolute path — always starts from root /
+$ cd /usr/bin
+ 
+# Relative path — from your current location
+$ cd ../etc          # go up then into etc
+$ cd ./scripts       # go into scripts/ here (. = current dir)
+```
+ 
+> *Source: TLCL 7th Ed., Ch. 2 "Navigation" & Ch. 3 "Exploring the System"*
  
 ---
  
-## ⌨️ Terminal Shortcuts — Learn These First
+### Reading `ls -l` Output
  
-Before any commands, these shortcuts will save you hours:
+```
+drwxr-xr-x  2  alice  staff   4096  Jun 03 09:15  Documents
+-rw-r--r--  1  root   root    1234  Jun 01 12:00  /etc/passwd
+```
  
-| Shortcut | What It Does |
-|----------|-------------|
-| `Tab` | **Auto-complete** a command or filename — use this constantly |
-| `Tab Tab` | Show all possible completions when there are multiple |
-| `↑` / `↓` | Scroll through command history |
-| `Ctrl + R` | **Reverse search** your history — type a keyword to find past commands |
-| `Ctrl + C` | Kill the current running command |
-| `Ctrl + L` | Clear the terminal screen (same as `clear`) |
-| `Ctrl + A` | Jump to the **beginning** of the line |
-| `Ctrl + E` | Jump to the **end** of the line |
-| `Ctrl + U` | Delete everything to the left of cursor |
-| `Ctrl + W` | Delete the last word typed |
-| `!!` | Re-run the previous command |
-| `sudo !!` | Re-run the previous command **as root** — extremely useful |
+| Field | Example | Meaning |
+|---|---|---|
+| File type + permissions | `drwxr-xr-x` | `d`=directory, `-`=file, `l`=symlink; then 9 permission bits |
+| Hard links | `2` | Number of names pointing to this inode |
+| Owner | `alice` | User who owns the file (UID) |
+| Group | `staff` | Group owner (GID) |
+| Size | `4096` | Bytes; use `ls -lh` for human-readable (4.0K) |
+| Modified | `Jun 03 09:15` | Last modification timestamp |
+| Name | `Documents` | Filename or directory name |
  
-> 🔥 **Pro Tip:** `sudo !!` is one of the most-used tricks in Linux. Ran a command and got "Permission denied"? Just type `sudo !!` and press Enter.
+> *Source: TLCL 7th Ed., Ch. 3 — Table 3-2 "Long Listing Fields"*
  
 ---
  
-## 📖 How to Read the Manual — `man` Pages
+### Study Tip — Day 1
  
-Before Googling, check the built-in manual:
+Build a cheatsheet file and add the filesystem hierarchy table as you study. Annotate each path with a real security scenario — e.g. `/tmp` → "attacker wrote exploit here", `/var/log/auth.log` → "check for brute-force attempts". This sticks far better than passive reading.
+ 
+---
+---
+ 
+## Day 2 — Tuesday
+### Linux Permissions & Users
+**Tags:** `#permissions` `#day2`
+**Schedule:** 08:00–10:00 Theory | Hands-On Labs
+ 
+---
+ 
+### The Unix Multi-User Security Model
+ 
+Linux is a **multi-user OS** — multiple people can use it simultaneously (via SSH, terminals, etc.). To prevent users from damaging each other's data, *every file has an owner and a group*. The kernel enforces access rules based on UIDs and GIDs.
+ 
+**Three entities for every file:**
+- **Owner (User)** — the person who created it
+- **Group** — a named collection of users
+- **Others (World)** — everyone else
+**Check your identity:**
+```bash
+$ id
+uid=1000(alice) gid=1000(alice) groups=1000(alice),27(sudo)
+```
+ 
+> **Root — UID 0 = unlimited power.** Root can read/write/execute any file, regardless of permissions. Root can also change UIDs/GIDs and run privileged operations. Treat root access like a loaded weapon.
  
 ```bash
-man ls           # Full manual for the ls command
-man grep         # Full manual for grep
-man 5 passwd     # Section 5 = file formats (the /etc/passwd file structure)
+$ sudo -l    # list what you can sudo
 ```
  
-| Inside `man` | What It Does |
-|--------------|-------------|
-| `Space` | Scroll down one page |
-| `b` | Scroll back one page |
-| `/keyword` | Search within the manual |
-| `q` | Quit |
- 
-> 💡 **Quicker alternative:** `ls --help` or `grep --help` gives a short summary without the full manual.
+> *Source: TLCL 7th Ed., Ch. 9 "Permissions"; ULSAH 5th Ed., Ch. 3 "Access Control and Rootly Powers"*
  
 ---
  
-### 1. Navigation & File Management
+### Permission Notation Decoded
  
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `pwd` | `pwd` | **P**rint **W**orking **D**irectory — "Where am I right now?" |
-| `ls` | `ls -la` | List files. `-l` = long format (permissions), `-a` = show hidden dotfiles |
-| `cd` | `cd ~` | Change directory. `~` = home, `-` = previous directory |
-| `mkdir` | `mkdir -p ~/practice/{scripts,logs,configs}` | Make directory. `-p` creates parents; `{}` creates multiple at once |
-| `touch` | `touch test.txt` | Creates an empty file (or updates its timestamp if it exists) |
+```
+-  r w x   r - x   r - -
+│  │ │ │   │ │ │   │ │ │
+│  └─┴─┘   └─┴─┘   └─┴─┘
+│  Owner   Group   Others
+└─ File type  (- = file,  d = directory,  l = symlink)
  
-**Try it:**
+r = 4,  w = 2,  x = 1
+Owner: rwx = 4+2+1 = 7  |  Group: r-x = 4+0+1 = 5  |  Others: r-- = 4+0+0 = 4
+→ chmod 754 filename
+```
+ 
+**Octal permission table:**
+ 
+| Octal | Binary | Permissions | Meaning |
+|---|---|---|---|
+| `7` | 111 | `rwx` | Read, write, execute |
+| `6` | 110 | `rw-` | Read and write |
+| `5` | 101 | `r-x` | Read and execute |
+| `4` | 100 | `r--` | Read only |
+| `0` | 000 | `---` | No permissions |
+ 
+**Common permission patterns:**
+ 
+| chmod | Meaning |
+|---|---|
+| `600` | Owner rw only — SSH private keys |
+| `644` | Owner rw, group/world r — config files |
+| `755` | Owner rwx, group/world rx — executables |
+| `700` | Owner rwx only — private scripts |
+| `777` | **World-writable — dangerous, avoid!** |
+ 
+**Symbolic chmod notation:**
 ```bash
-pwd
-ls -la
-cd ~
-cd -                               # Jump back to where you just were
-mkdir -p ~/practice/{scripts,logs,configs}
-ls ~/practice                      # Confirm all 3 folders were created
-touch test.txt
+# u=user/owner, g=group, o=others, a=all
+$ chmod u+x script.sh      # add execute for owner
+$ chmod go-w file.txt      # remove write from group+others
+$ chmod a=r file.txt       # everyone gets read only
+$ chmod u+x,go=rx file     # combined
 ```
  
-### 🔍 Reading `ls -la` Output
- 
-```
-drwxr-xr-x  2 alice alice 4096 Jun  1 10:00 scripts
--rw-r--r--  1 alice alice  220 Jun  1 10:00 test.txt
-^          ^ ^     ^
-|          | |     └── Group owner
-|          | └──────── User owner
-|          └─────────── Number of hard links
-└────────────────────── Permissions (see below)
-```
- 
-**Permission string breakdown:**
-```
-- r w x r - x r - -
-^ ^   ^   ^   ^   ^
-| |   |   |   |   └── Others: read only
-| |   |   |   └────── Group: read + execute
-| |   |   └────────── User: read + write + execute
-| └───────────────── File type: - = file, d = directory, l = symlink
-```
- 
-| Symbol | Meaning |
-|--------|---------|
-| `r` | Read — view file contents or list directory |
-| `w` | Write — modify file or create/delete inside directory |
-| `x` | Execute — run the file as a program, or `cd` into directory |
-| `-` | Permission NOT granted |
- 
-> 🔐 **Security Tip:** A file showing `-rwsr-xr-x` has the **SUID bit** set (`s` instead of `x`). It runs as its owner (often root) regardless of who executes it — a common privilege escalation target.
+> *Source: TLCL 7th Ed., Ch. 9 — Tables 9-4, 9-5, 9-6; ULSAH 5th Ed., Ch. 5 "The Filesystem"*
  
 ---
  
-### 2. Viewing File Contents
+### User & Group Files to Know
  
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `cat` | `cat test.txt` | Print entire file contents to the screen |
-| `less` | `less file.txt` | Open interactive reader — scroll with arrows, `q` to quit |
-| `head` | `head -20 file.txt` | Show only the **first** 20 lines |
-| `tail` | `tail -20 file.txt` | Show only the **last** 20 lines |
-| `tail -f` | `tail -f /var/log/auth.log` | **Live follow** — stream new lines as they are written (Ctrl+C to stop) |
-| `nano` | `nano file.txt` | Simple terminal text editor — `Ctrl+O` save, `Ctrl+X` exit |
-| `wc -l` | `wc -l /etc/passwd` | Count the number of lines in a file |
+| File | Contains | Format | Security Note |
+|---|---|---|---|
+| `/etc/passwd` | User account info | `user:x:uid:gid:comment:home:shell` | World-readable — no passwords here. The `x` means look in shadow. |
+| `/etc/shadow` | Hashed passwords + expiry policy | `user:$hash:lastchg:min:max:warn:...` | **Root-only readable.** Contains salted password hashes — prime target. Never expose. |
+| `/etc/group` | Group memberships | `groupname:x:gid:member1,member2` | Shows who has elevated access (e.g. sudo, docker groups). Check regularly. |
+| `/etc/sudoers` | Sudo permissions policy | Structured config language | Controls who can run what as root. **Always edit with `visudo`** — syntax errors can lock you out. |
  
-**Try it:**
+**Quick inspection commands:**
 ```bash
-cat test.txt
-head -20 /etc/passwd
-tail -20 /etc/passwd
-wc -l /etc/passwd                  # How many user accounts exist?
-less /etc/os-release               # q to quit
-tail -f /var/log/syslog            # Watch live system logs (Ctrl+C to stop)
+$ cat /etc/passwd              # list all users
+$ sudo cat /etc/shadow         # password hashes (root only)
+$ cat /etc/group               # list groups
+$ getent passwd alice          # info for specific user
+$ groups alice                 # groups a user belongs to
+$ id alice                     # uid/gid/groups
 ```
  
-> 🔥 **Pro Tip:** `tail -f` is essential during incident response — run it on `auth.log` while watching for live login attempts.
+**User management commands:**
+```bash
+$ sudo useradd -m -s /bin/bash bob
+$ sudo passwd bob              # set password
+$ sudo usermod -aG sudo bob    # add to sudo group
+$ sudo userdel -r bob          # delete user + home dir
+$ sudo groupadd devteam
+$ sudo gpasswd -a bob devteam
+```
+ 
+> *Source: TLCL 7th Ed., Ch. 9 "Permissions"; ULSAH 5th Ed., Ch. 8 "User Management"*
  
 ---
  
-### 3. Pipes & Redirection — The Power of Linux CLI
+### Privilege Escalation — su vs sudo
  
-This is what makes Linux CLI truly powerful. Commands can be **chained together**.
- 
-| Operator | Example | What It Does |
-|----------|---------|-------------|
-| `\|` (pipe) | `cat /etc/passwd \| grep "root"` | Sends output of one command as input to the next |
-| `>` | `ls -la > output.txt` | Writes output to a file (**overwrites** if file exists) |
-| `>>` | `echo "hello" >> log.txt` | **Appends** output to a file (does not overwrite) |
-| `2>/dev/null` | `find / -name "*.conf" 2>/dev/null` | Discards error messages (`2` = stderr) |
-| `&&` | `mkdir logs && cd logs` | Run second command **only if first succeeds** |
-| `\|\|` | `cd /tmp \|\| echo "failed"` | Run second command **only if first fails** |
- 
-**Try it:**
+**su — Substitute User**
 ```bash
-# Pipe examples
-cat /etc/passwd | grep "bash"            # Find users with bash shell
-ls -la /etc | grep "shadow"              # Find the shadow file entry
-cat /etc/passwd | wc -l                  # Count total user accounts
+$ su                # become root (needs root password)
+$ su - alice        # switch to alice (login shell)
+$ exit              # return to previous user
+```
+> **su weakness:** No audit trail of what commands were run as root. Best reserved for emergencies when sudo is broken.
  
-# Redirection
-ls -la ~ > ~/practice/homedir.txt        # Save listing to a file
-cat ~/practice/homedir.txt               # Verify it was written
-echo "new entry" >> ~/practice/homedir.txt    # Append without overwriting
+**sudo — Limited Superuser Access**
+```bash
+$ sudo command              # run as root
+$ sudo -u alice command     # run as alice
+$ sudo -l                   # list your allowed commands
+$ sudo -i                   # root login shell
+$ sudo visudo               # safely edit /etc/sudoers
+```
+> **sudo advantages:** Full audit log (`/var/log/auth.log`), granular command restriction, individual accountability — the DevSecOps standard.
  
-# Chaining
-mkdir ~/practice/test && echo "Created!" || echo "Already exists"
+**`/etc/sudoers` basic structure:**
+```
+# Format: who  where = (as_whom) commands
+alice      ALL = (ALL) ALL              # alice can run anything as any user
+%devops    ALL = (ALL) NOPASSWD: ALL    # devops group, no password (DANGEROUS)
+bob        ALL = /usr/bin/systemctl    # bob can only run systemctl
+ 
+# ALWAYS edit with visudo, never directly edit the file
+$ sudo visudo
 ```
  
-> 🧠 **Mental model for pipes:** Think of `|` as a conveyor belt. Each command picks up what the previous one put down, processes it, and passes it on.
+> *Source: ULSAH 5th Ed., Ch. 3 — "sudo: limited su" & "Management of the root account"; TLCL 7th Ed., Ch. 9*
  
 ---
  
-### 4. Searching & Filtering
+### Ownership & Permission Commands
  
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `find` | `find / -name "*.conf" 2>/dev/null` | Search entire filesystem for `.conf` files |
-| `find` | `find /tmp -type f -mmin -10` | Find files in `/tmp` modified in the last 10 minutes |
-| `find` | `find / -perm -4000 2>/dev/null` | Find all **SUID** files — privilege escalation check |
-| `grep` | `grep "root" /etc/passwd` | Search for the string `"root"` inside a file |
-| `grep -r` | `grep -r "password" /etc/ 2>/dev/null` | **Recursively** search all files in `/etc/` |
-| `grep -i` | `grep -i "error" /var/log/syslog` | Case-insensitive search |
-| `grep -n` | `grep -n "failed" /var/log/auth.log` | Show **line numbers** with results |
-| `grep -v` | `grep -v "^#" /etc/ssh/sshd_config` | Show lines that do **NOT** match (exclude comments) |
- 
-**Try it:**
+**chmod** — Change file mode/permissions (only owner or root)
 ```bash
-find / -name "*.conf" 2>/dev/null
-find /tmp -type f                              # List all files in /tmp
-find / -perm -4000 2>/dev/null                 # Find SUID binaries
- 
-grep "root" /etc/passwd
-grep -n "failed" /var/log/auth.log 2>/dev/null    # Failed login attempts with line numbers
-grep -v "^#" /etc/ssh/sshd_config 2>/dev/null     # SSH config without comment lines
-grep -r "password" /etc/ 2>/dev/null
+$ chmod 644 file.txt
+$ chmod +x script.sh
+$ chmod -R 755 /webroot
 ```
  
-> 🔍 **Security note:** `find / -perm -4000 2>/dev/null` lists all SUID binaries on the system. This is one of the first commands a penetration tester runs after gaining access.
+**chown** — Change file owner (root only)
+```bash
+$ sudo chown alice file.txt
+$ sudo chown alice:devs dir/
+$ sudo chown -R alice /home/alice
+```
  
-> 💡 **Grep tip:** `grep -v "^#"` removes comment lines from config files. `^` means "start of line", so `^#` matches any line beginning with `#`.
+**chgrp** — Change group owner
+```bash
+$ chgrp devteam project/
+$ sudo chgrp -R www-data /var/www
+```
+ 
+**umask** — Set default permission mask for new files
+```bash
+$ umask            # show current (e.g. 0022)
+$ umask 027        # owner all, group rx, others nothing
+```
+ 
+**stat** — Detailed file info: permissions, inode, timestamps, owner
+```bash
+$ stat /etc/passwd
+# shows Access: (0644/-rw-r--r--)
+```
+ 
+**find + permissions** — Find files with specific permissions (critical for audits)
+```bash
+$ find / -perm -4000 2>/dev/null     # find all setuid files
+$ find /tmp -perm -o+w               # find world-writable in /tmp
+```
+ 
+> *Source: TLCL 7th Ed., Ch. 9; ULSAH 5th Ed., Ch. 3 & Ch. 5*
  
 ---
  
-### 5. File Operations
+### Special Permissions — Security-Critical
  
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `cp` | `cp file.txt backup.txt` | Copy a file |
-| `cp -r` | `cp -r folder/ backup_folder/` | Copy an entire directory recursively |
-| `mv` | `mv old.txt new.txt` | Move **or rename** a file |
-| `rm` | `rm file.txt` | Remove a file |
-| `rm -rf` | `rm -rf directory/` | ⚠️ Forcefully delete a directory and ALL its contents — no undo |
-| `ln -s` | `ln -s /etc/passwd ~/passwd_link` | Create a **symbolic link** (shortcut) to a file |
+| Bit | Octal | On File | On Directory | Security Impact |
+|---|---|---|---|---|
+| **Setuid (SUID)** | `4000` | Runs as the file's *owner*, not the caller. e.g. `passwd` runs as root. | No effect | Dangerous if misconfigured — attackers use setuid binaries to escalate. Audit with `find / -perm -4000` |
+| **Setgid (SGID)** | `2000` | Runs with the file's group permissions | New files inherit directory's group — useful for shared project dirs | Audit with `find / -perm -2000` |
+| **Sticky bit** | `1000` | Ignored on modern Linux | Users can only delete their *own* files in the directory. Used on `/tmp`. | Protects shared dirs. `/tmp` has this — see the `t` in `drwxrwxrwt` |
  
-**Try it:**
 ```bash
-cp test.txt backup.txt
-cp -r ~/practice ~/practice_backup
-mv backup.txt renamed_backup.txt
-rm renamed_backup.txt
+# Example output showing special bits
+-rwsr-xr-x  root  root  /usr/bin/passwd   # 's' = setuid on owner execute bit
+drwxrwxrwt  root  root  /tmp              # 't' = sticky bit on others execute bit
+ 
+# Set special permissions
+$ chmod u+s program       # set setuid
+$ chmod g+s shared_dir    # set setgid on directory
+$ chmod +t /shared        # set sticky bit
 ```
+ 
+> *Source: TLCL 7th Ed., Ch. 9 — "Some Special Permissions"; ULSAH 5th Ed., Ch. 3 "Setuid and setgid execution"*
  
 ---
  
-### 6. System & Identity Information
- 
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `whoami` | `whoami` | Print your current username |
-| `id` | `id` | Show your User ID (UID) and all groups you belong to |
-| `groups` | `groups` | Show all groups your account belongs to |
-| `uname -a` | `uname -a` | Print full system info (kernel version, architecture) |
-| `hostname` | `hostname` | Print the machine's hostname |
-| `date` | `date` | Print current date and time |
-| `uptime` | `uptime` | Show how long the system has been running + load average |
-| `df -h` | `df -h` | Show disk space usage in human-readable format |
-| `du -sh ~` | `du -sh ~` | Show total size of your home directory |
-| `free -h` | `free -h` | Show RAM usage in human-readable format |
-| `ps aux` | `ps aux` | Show all running processes |
-| `ps aux \| grep ssh` | `ps aux \| grep ssh` | Check if a specific process is running |
-| `cat /etc/os-release` | `cat /etc/os-release` | Show your Linux distribution details |
- 
-**Try it:**
-```bash
-whoami
-id
-groups
-uname -a
-hostname
-uptime
-df -h
-free -h
-ps aux | grep ssh
-cat /etc/os-release
-```
- 
-> 🔐 **Security check:** `id` tells you if you are in the `sudo` or `docker` group. Being in the `docker` group is essentially equivalent to having root access — a frequent misconfiguration finding.
- 
----
- 
-## 🛠️ Productivity Tips & Tricks
- 
-### Create Aliases for Long Commands
- 
-Aliases let you shorten commands you run often. Add them to `~/.bashrc` to make them permanent:
+### DevSecOps: Permission Audit Commands
  
 ```bash
-# Add these to ~/.bashrc
-alias ll='ls -la'
-alias ..='cd ..'
-alias ...='cd ../..'
-alias grep='grep --color=auto'          # Colorize grep matches
-alias ports='ss -tulnp'                 # Quick open ports check
-alias logs='tail -f /var/log/syslog'    # Live system log watcher
+# Find all setuid binaries (potential priv-esc vectors)
+$ find / -perm -4000 -type f 2>/dev/null
  
-# Apply changes without restarting terminal
-source ~/.bashrc
-```
+# Find world-writable files (attacker can modify)
+$ find / -perm -o+w -type f 2>/dev/null
  
-### Command History Tricks
+# Find files with no owner (orphaned — possible indicator)
+$ find / -nouser 2>/dev/null
  
-```bash
-history                      # Show numbered command history
-history | grep "find"        # Search history for past find commands
-!42                          # Re-run command number 42 from history
-!!                           # Re-run the very last command
-sudo !!                      # Re-run last command as root
-# Ctrl + R                   # Live interactive history search — type to filter
-```
+# Check for recently modified files in /etc (config tampering)
+$ find /etc -mmin -60 -type f 2>/dev/null
  
-> 💡 **Set a larger history:** Add `HISTSIZE=10000` and `HISTFILESIZE=20000` to `~/.bashrc` so you never lose a useful command.
+# Validate sudoers syntax
+$ sudo visudo -c
  
-### Writing to Files Quickly
+# Who is logged in right now?
+$ who
+$ w                    # more detail: uptime + sessions
+$ last                 # recent login history
+$ lastb                # failed login attempts (root only)
  
-```bash
-# Single line — overwrite
-echo "192.168.1.1  target" > hosts.txt
- 
-# Single line — append
-echo "192.168.1.2  server" >> hosts.txt
- 
-# Multi-line file (heredoc)
-cat > notes.txt << EOF
-This is line 1
-This is line 2
-EOF
-```
- 
-### Brace Expansion — Create Many Things at Once
- 
-```bash
-mkdir -p ~/project/{src,tests,docs,logs}          # 4 directories at once
-touch file{1..5}.txt                               # Creates file1.txt through file5.txt
-cp config.conf config.conf.bak                     # Quick backup before editing
+# Check for suspicious cron jobs
+$ crontab -l           # your crontab
+$ cat /etc/crontab
+$ ls /etc/cron.*
 ```
  
 ---
  
-## ⚠️ Common Beginner Mistakes
+### Study Tip — Day 2
  
-| Mistake | What Happens | Fix |
-|---------|-------------|-----|
-| `rm -rf /` | Deletes the entire system — unrecoverable | Never run this. Modern Linux adds `--no-preserve-root` safeguard |
-| `rm -rf *` in wrong directory | Deletes everything in current folder | Always run `pwd` before `rm -rf` |
-| Forgetting `sudo` | "Permission denied" errors | Use `sudo !!` to instantly re-run as root |
-| `>` instead of `>>` | Overwrites a file you meant to append to | Use `>>` to append, `>` only when you want to overwrite |
-| `cat` on a binary file | Garbled output or terminal corruption | Run `file filename` first to check the type |
-| Editing `/etc/sudoers` directly with `nano` | Can lock you out of sudo permanently | Always use `visudo` — it validates syntax before saving |
-| `chmod 777` on sensitive files | Everyone on the system can read and write | Use the least permissive setting that still works |
- 
-> 🔥 **Golden rule before any destructive command:** Run `pwd` first. Many disasters happen because someone ran `rm -rf *` in the wrong directory.
- 
----
- 
-## 🔐 Security Eye — Key Takeaways
- 
-1. **`/tmp` is dangerous** — world-writable, so any user or process can write there. Malware frequently stages and executes from here.
-2. **`/etc/shadow` is your password vault** — it should only ever be readable by `root`. Verify with `ls -la /etc/shadow`.
-3. **`/var/log` is your evidence** — in any security incident, logs are the first thing you check (and the first thing attackers try to erase). Monitor live with `tail -f /var/log/auth.log`.
-4. **`whoami` + `id`** — always know who you are before running privileged commands. Check group membership — `sudo`, `docker`, and `adm` groups all carry significant power.
-5. **`find` and `grep`** — dual-use recon tools. Defenders use them to audit; attackers use them to hunt for credentials and misconfigurations.
-6. **SUID files** — run `find / -perm -4000 2>/dev/null` periodically. Any unexpected SUID binary is worth investigating.
-7. **Pipes are your best friend** — `cat /var/log/auth.log | grep "Failed" | wc -l` gives you the exact count of failed login attempts in one line.
----
- 
-## 📝 Study Tip — Filesystem Cheatsheet
- 
-Try to recreate this table from memory in your own `linux_cheatsheet.md`:
- 
-| Path | What Lives Here | Security Check Command |
-|------|----------------|----------------------|
-| `/var/log/auth.log` | SSH + sudo login attempts | `tail -f /var/log/auth.log` |
-| `/etc/shadow` | Password hashes | `ls -la /etc/shadow` (should be root-only) |
-| `/etc/sudoers` | Sudo privilege rules | `sudo visudo` (always edit this way) |
-| `/tmp` | World-writable temp files | `ls -la /tmp` (watch for unexpected executables) |
-| `/proc` | Live process data | `ls /proc` (each number = a running process PID) |
-| `~/.ssh/` | SSH keys | `ls -la ~/.ssh/` (id_rsa must be `chmod 600`) |
-| `~/.bashrc` | Shell config + aliases | `cat ~/.bashrc` (attackers add persistence here) |
- 
----
- 
-## 🧪 End-of-Day Challenge
- 
-Try these on your own — no peeking at the answers first:
- 
-1. Find all `.log` files under `/var` and count how many there are
-2. Show only the lines in `/etc/passwd` that contain the word `bash`
-3. Create a directory structure: `~/devsecops/week1/{notes,labs,scripts}`
-4. Check how many failed SSH attempts are in your auth log
-5. Find all SUID binaries on your system
-<details>
-<summary>Answers (click to reveal)</summary>
-```bash
-# 1 - Find and count all .log files under /var
-find /var -name "*.log" 2>/dev/null | wc -l
- 
-# 2 - Show only bash-shell users
-grep "bash" /etc/passwd
- 
-# 3 - Create directory structure with brace expansion
-mkdir -p ~/devsecops/week1/{notes,labs,scripts}
- 
-# 4 - Count failed SSH attempts
-grep "Failed" /var/log/auth.log 2>/dev/null | wc -l
- 
-# 5 - Find all SUID binaries
-find / -perm -4000 2>/dev/null
-```
- 
-</details>
+Create a test file and practice the full permissions cycle:
+1. `touch test.txt`
+2. `chmod 754 test.txt` — decode each bit aloud
+3. `stat test.txt` — verify what you set
+4. Create a shared group directory with setgid and check how new files inherit the group
+5. Run `find / -perm -4000 2>/dev/null` and research each result you find
 ---

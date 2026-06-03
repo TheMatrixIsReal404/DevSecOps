@@ -1,323 +1,291 @@
-# 🐧 Linux Command Cheatsheet
-> **Day 1 Reference** — Quick-access commands for CLI navigation, file ops, searching, and system info.  
-
+# Linux Command Cheatsheet
+### DevSecOps — Day 1 & Day 2 Quick Reference
+ 
+> *Sources: The Linux Command Line (7th Ed.) · Adventures with the Command Line (1st Ed.) · UNIX & Linux System Administration Handbook (5th Ed.)*
  
 ---
  
-## ⌨️ Terminal Shortcuts
+## Filesystem Hierarchy — Security Map
  
-| Shortcut | What It Does |
-|----------|-------------|
-| `Tab` | Auto-complete a command or filename |
-| `Tab Tab` | Show all possible completions |
-| `↑` / `↓` | Scroll through command history |
-| `Ctrl + R` | Reverse search history — type a keyword |
-| `Ctrl + C` | Kill the current running command |
-| `Ctrl + L` | Clear the terminal screen |
-| `Ctrl + A` | Jump to the beginning of the line |
-| `Ctrl + E` | Jump to the end of the line |
-| `Ctrl + U` | Delete everything left of cursor |
-| `Ctrl + W` | Delete the last word typed |
-| `!!` | Re-run the previous command |
-| `sudo !!` | Re-run previous command as root |
+| Directory | Purpose | Security Note |
+|---|---|---|
+| `/etc` | System configs | Contains `passwd`, `shadow`, `sudoers` — access control crown jewels |
+| `/var/log` | Log files | Your audit trail — never delete |
+| `/home` | User home dirs | Sensitive user data; SSH login landing |
+| `/tmp` | Temporary files | **World-writable — attacker playground** |
+| `/proc` | Process / kernel info | Live system state; `/proc/net` shows connections |
+| `/usr/bin` | User binaries | Where executables live — check for rogue binaries |
+| `/bin` | Essential binaries | `ls`, `bash` — required before `/usr` mounts |
+| `/sbin` | Sysadmin binaries | Root-level tools: `iptables`, `ifconfig` |
+| `/dev` | Device files | Permission-controlled; `/dev/null`, `/dev/sda` |
+| `/root` | Root's home | Never expose via web or shared mounts |
  
 ---
  
-## 📖 Manual & Help
+## Navigation & File Reading
+ 
+| Command | What it does | Key flags / examples |
+|---|---|---|
+| `pwd` | Print current directory | — |
+| `ls` | List directory contents | `-l` long · `-a` all · `-h` human · `-t` by time · `-R` recursive |
+| `cd /path` | Change directory | `cd` → home · `cd -` → previous · `cd ..` → parent |
+| `cat` | Print entire file | `cat /etc/passwd` |
+| `less` | Scroll through file | `q` quit · `/term` search · `G` end · `g` top |
+| `head` | Show first N lines | `head -n 20 file` |
+| `tail` | Show last N lines | `tail -f /var/log/syslog` — live follow |
+| `file` | Determine file type | `file /bin/bash` → ELF 64-bit LSB executable |
+| `stat` | Detailed file metadata | Shows octal perms, timestamps, inode, owner |
+| `find` | Search for files | `-name` · `-perm` · `-type` · `-mtime` · `-user` · `-nouser` |
+ 
+**Paths reminder:**
+```bash
+cd /usr/bin        # absolute — starts from /
+cd ../etc          # relative — from current dir
+cd ./scripts       # .  = current directory
+```
+ 
+---
+ 
+## Permissions — Decode & Set
+ 
+**Permission string layout:**
+```
+- r w x   r - x   r - -
+│ └─┴─┘   └─┴─┘   └─┴─┘
+│ Owner   Group   Others
+└ type: - file  d dir  l symlink
+ 
+r=4  w=2  x=1
+rwx=7  r-x=5  r--=4  rw-=6  ---=0
+```
+ 
+**Octal quick reference:**
+ 
+| Octal | Perms | Meaning |
+|---|---|---|
+| `7` | `rwx` | Read, write, execute |
+| `6` | `rw-` | Read and write |
+| `5` | `r-x` | Read and execute |
+| `4` | `r--` | Read only |
+| `0` | `---` | No permissions |
+ 
+**Common patterns:**
+ 
+| chmod | Meaning | Typical Use |
+|---|---|---|
+| `600` | Owner rw only | SSH private keys |
+| `644` | Owner rw, rest r | Config files |
+| `755` | Owner rwx, rest rx | Executables, public dirs |
+| `700` | Owner rwx only | Private scripts |
+| `640` | Owner rw, group r | Group-shared configs |
+| `777` | **Everyone everything** | **Dangerous — avoid!** |
+ 
+**Permission string quick decode:**
+ 
+| String | Meaning | Typical Use |
+|---|---|---|
+| `-rwx------` | Owner: all \| others: none | Private script / SSH key |
+| `-rw-------` | Owner: rw \| others: none | `~/.ssh/authorized_keys` |
+| `-rw-r--r--` | Owner: rw \| rest: r | `/etc/passwd`, public config |
+| `-rwxr-xr-x` | Owner: all \| rest: rx | System executables `/usr/bin` |
+| `drwxrwxrwt` | All perms + sticky bit | `/tmp` — protected deletes |
+| `-rwsr-xr-x` | Setuid — runs as owner | `/usr/bin/passwd`, `ping` |
+| `drwxrws---` | Dir + setgid | Shared team project dirs |
+ 
+---
+ 
+## chmod / chown / chgrp
  
 ```bash
-man ls                # Full manual for ls
-man grep              # Full manual for grep
-man 5 passwd          # Section 5 = file formats
-ls --help             # Quick summary (faster than man)
-grep --help
-```
+# chmod — change permissions (owner or root)
+chmod 644 file.txt               # octal
+chmod +x script.sh               # symbolic: add execute for owner
+chmod go-w file.txt              # remove write from group & others
+chmod u+x,go=rx file             # combined symbolic
+chmod -R 755 /webroot            # recursive
  
-| Inside `man` | Action |
-|--------------|--------|
-| `Space` | Scroll down one page |
-| `b` | Scroll back one page |
-| `/keyword` | Search within the manual |
-| `q` | Quit |
+# chown — change owner (root only)
+sudo chown alice file.txt
+sudo chown alice:devs dir/
+sudo chown -R alice /home/alice  # recursive
  
----
+# chgrp — change group
+chgrp devteam project/
+sudo chgrp -R www-data /var/www
  
-## 📂 1. Navigation & File Management
- 
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `pwd` | `pwd` | Print current directory |
-| `ls` | `ls -la` | List files; `-l` = long format, `-a` = show hidden |
-| `cd` | `cd ~` | Change directory; `~` = home, `-` = previous dir |
-| `mkdir` | `mkdir -p ~/practice/{scripts,logs,configs}` | Make dir; `-p` creates parents + multiple at once |
-| `touch` | `touch test.txt` | Create empty file (or update its timestamp) |
- 
-```bash
-pwd
-ls -la
-cd ~
-cd -                                    # Jump back to where you just were
-mkdir -p ~/practice/{scripts,logs,configs}
-ls ~/practice                           # Confirm all 3 folders were created
-touch test.txt
-```
- 
-### Reading `ls -la` output
- 
-```
-drwxr-xr-x  2 alice alice 4096 Jun  1 10:00 scripts
--rw-r--r--  1 alice alice  220 Jun  1 10:00 test.txt
-│           │ │     │
-│           │ │     └── Group owner
-│           │ └──────── User owner
-│           └─────────── Hard links
-└────────────────────── Permissions string
-```
- 
-```
-- r w x r - x r - -
-│ ├───┤ ├───┤ ├───┤
-│  U    G    O
-│
-└── File type: - = file, d = directory, l = symlink
-```
- 
-| Symbol | Meaning |
-|--------|---------|
-| `r` | Read |
-| `w` | Write |
-| `x` | Execute / enter directory |
-| `-` | Permission NOT granted |
- 
-> 🔐 `-rwsr-xr-x` → **SUID bit set** (`s` instead of `x`). Runs as owner (often root). Common privesc target.
- 
----
- 
-## 👁️ 2. Viewing File Contents
- 
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `cat` | `cat test.txt` | Print entire file to screen |
-| `less` | `less file.txt` | Interactive reader; scroll with arrows, `q` to quit |
-| `head` | `head -20 file.txt` | Show first 20 lines |
-| `tail` | `tail -20 file.txt` | Show last 20 lines |
-| `tail -f` | `tail -f /var/log/auth.log` | **Live follow** — stream new lines in real time |
-| `nano` | `nano file.txt` | Simple text editor; `Ctrl+O` save, `Ctrl+X` exit |
-| `wc -l` | `wc -l /etc/passwd` | Count lines in a file |
- 
-```bash
-cat test.txt
-head -20 /etc/passwd
-tail -20 /etc/passwd
-wc -l /etc/passwd                       # How many user accounts?
-less /etc/os-release                    # q to quit
-tail -f /var/log/syslog                 # Watch live system logs (Ctrl+C to stop)
+# umask — default permission mask for new files
+umask                            # show current (e.g. 0022)
+umask 027                        # owner all, group rx, others nothing
 ```
  
 ---
  
-## 🔗 3. Pipes & Redirection
+## Special Permission Bits
  
-| Operator | Example | What It Does |
-|----------|---------|-------------|
-| `\|` | `cat /etc/passwd \| grep "root"` | Pipe output as input to next command |
-| `>` | `ls -la > output.txt` | Write output to file (**overwrites**) |
-| `>>` | `echo "hello" >> log.txt` | **Append** to file |
-| `2>/dev/null` | `find / -name "*.conf" 2>/dev/null` | Discard error messages |
-| `&&` | `mkdir logs && cd logs` | Run next command only if first **succeeds** |
-| `\|\|` | `cd /tmp \|\| echo "failed"` | Run next command only if first **fails** |
+| Bit | Octal | On File | On Directory |
+|---|---|---|---|
+| **Setuid (SUID)** | `4000` | Runs as file's owner (not caller) — e.g. `passwd` | No effect |
+| **Setgid (SGID)** | `2000` | Runs with file's group | New files inherit dir's group |
+| **Sticky bit** | `1000` | Ignored | Users delete only their own files — used on `/tmp` |
  
 ```bash
-cat /etc/passwd | grep "bash"           # Users with bash shell
-ls -la /etc | grep "shadow"             # Find the shadow file
-cat /etc/passwd | wc -l                 # Count total user accounts
+chmod u+s program       # set setuid
+chmod g+s shared_dir    # set setgid on directory
+chmod +t /shared        # set sticky bit
  
-ls -la ~ > ~/practice/homedir.txt       # Save listing to a file
-echo "new entry" >> ~/practice/homedir.txt    # Append without overwriting
- 
-mkdir ~/practice/test && echo "Created!" || echo "Already exists"
-```
- 
-> 🧠 Think of `|` as a conveyor belt — each command processes what the previous one passed.
- 
----
- 
-## 🔍 4. Searching & Filtering
- 
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `find` | `find / -name "*.conf" 2>/dev/null` | Search filesystem for `.conf` files |
-| `find` | `find /tmp -type f -mmin -10` | Files in `/tmp` modified in last 10 min |
-| `find` | `find / -perm -4000 2>/dev/null` | **SUID** files — privilege escalation check |
-| `grep` | `grep "root" /etc/passwd` | Search string inside a file |
-| `grep -r` | `grep -r "password" /etc/ 2>/dev/null` | Recursive search through directory |
-| `grep -i` | `grep -i "error" /var/log/syslog` | Case-insensitive search |
-| `grep -n` | `grep -n "failed" /var/log/auth.log` | Show line numbers with results |
-| `grep -v` | `grep -v "^#" /etc/ssh/sshd_config` | Exclude matching lines (e.g., strip comments) |
- 
-```bash
-find / -name "*.conf" 2>/dev/null
-find /tmp -type f                               # All files in /tmp
-find / -perm -4000 2>/dev/null                  # Find all SUID binaries
- 
-grep "root" /etc/passwd
-grep -n "failed" /var/log/auth.log 2>/dev/null  # Failed logins with line numbers
-grep -v "^#" /etc/ssh/sshd_config 2>/dev/null  # SSH config, no comments
-grep -r "password" /etc/ 2>/dev/null
+# Identifying special bits in ls output
+-rwsr-xr-x   # 's' on owner x = setuid
+drwxrwxrwt   # 't' on others x = sticky bit
 ```
  
 ---
  
-## 📁 5. File Operations
+## User & Group Files
  
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `cp` | `cp file.txt backup.txt` | Copy a file |
-| `cp -r` | `cp -r folder/ backup/` | Copy directory recursively |
-| `mv` | `mv old.txt new.txt` | Move or rename a file |
-| `rm` | `rm file.txt` | Remove a file |
-| `rm -rf` | `rm -rf directory/` | ⚠️ Force-delete directory + all contents — no undo |
-| `ln -s` | `ln -s /etc/passwd ~/passwd_link` | Create a symbolic link |
+| File | Contains | Security Note |
+|---|---|---|
+| `/etc/passwd` | User accounts | World-readable — no passwords. Format: `user:x:uid:gid:comment:home:shell` |
+| `/etc/shadow` | Hashed passwords | **Root-only.** Never expose. Format: `user:$hash:lastchg:...` |
+| `/etc/group` | Group memberships | Check for unexpected sudo/docker group members |
+| `/etc/sudoers` | sudo policy | **Always edit with `visudo`** — syntax errors lock you out |
+ 
+---
+ 
+## User Identity & Inspection
  
 ```bash
-cp test.txt backup.txt
-cp -r ~/practice ~/practice_backup
-mv backup.txt renamed_backup.txt
-rm renamed_backup.txt
+id                          # your uid/gid/groups
+id alice                    # another user's ids
+whoami                      # just your username
+groups alice                # groups a user belongs to
+getent passwd alice         # full account info for alice
+cat /etc/passwd             # all user accounts
+sudo cat /etc/shadow        # hashed passwords (root only)
+cat /etc/group              # all groups
 ```
  
 ---
  
----
- 
-## 🖥️ 6. System & Identity Info
- 
-| Command | Example | What It Does |
-|---------|---------|-------------|
-| `whoami` | `whoami` | Print current username |
-| `id` | `id` | Show UID and all group memberships |
-| `groups` | `groups` | Show groups your account belongs to |
-| `uname -a` | `uname -a` | Full system info (kernel, architecture) |
-| `hostname` | `hostname` | Print machine hostname |
-| `date` | `date` | Current date and time |
-| `uptime` | `uptime` | System uptime + load average |
-| `df -h` | `df -h` | Disk space usage (human-readable) |
-| `du -sh ~` | `du -sh ~` | Total size of home directory |
-| `free -h` | `free -h` | RAM usage (human-readable) |
-| `ps aux` | `ps aux` | Show all running processes |
-| `ps aux \| grep ssh` | — | Check if a specific process is running |
-| `cat /etc/os-release` | — | Show Linux distribution details |
+## User Management
  
 ```bash
-whoami
-id                                      # Check for sudo/docker group membership!
-groups
-uname -a
-hostname
-uptime
-df -h
-free -h
-ps aux | grep ssh
-cat /etc/os-release
-```
+# Create user
+sudo useradd -m -s /bin/bash bob    # -m creates home, -s sets shell
+sudo passwd bob                      # set/change password
  
-> 🔐 Being in the `docker` group = effectively root. Being in `sudo` group = can run anything as root. Always verify with `id`.
+# Modify user
+sudo usermod -aG sudo bob           # add to group (-a = append)
+sudo usermod -s /bin/zsh bob        # change shell
+sudo usermod -l newname bob         # rename user
  
----
+# Delete user
+sudo userdel bob                    # keep home dir
+sudo userdel -r bob                 # delete user + home dir
  
-## ⚡ 7. Productivity Shortcuts
- 
-### Aliases (add to `~/.bashrc`)
- 
-```bash
-alias ll='ls -la'
-alias ..='cd ..'
-alias ...='cd ../..'
-alias grep='grep --color=auto'
-alias ports='ss -tulnp'                 # Quick open ports check
-alias logs='tail -f /var/log/syslog'    # Live log watcher
- 
-source ~/.bashrc                        # Apply changes without restarting
-```
- 
-### History Tricks
- 
-```bash
-history                         # Show numbered history
-history | grep "find"           # Search history for a command
-!42                             # Re-run command #42
-!!                              # Re-run last command
-sudo !!                         # Re-run last command as root
-# Ctrl+R                        # Live interactive history search
-```
- 
-> 💡 Add `HISTSIZE=10000` and `HISTFILESIZE=20000` to `~/.bashrc` to never lose a command.
- 
-### Writing to Files
- 
-```bash
-echo "192.168.1.1  target" > hosts.txt        # Overwrite
-echo "192.168.1.2  server" >> hosts.txt       # Append
- 
-cat > notes.txt << EOF
-This is line 1
-This is line 2
-EOF
-```
- 
-### Brace Expansion
- 
-```bash
-mkdir -p ~/project/{src,tests,docs,logs}      # 4 directories at once
-touch file{1..5}.txt                          # Creates file1.txt–file5.txt
-cp config.conf config.conf.bak               # Quick backup before editing
+# Groups
+sudo groupadd devteam
+sudo gpasswd -a bob devteam        # add bob to group
+sudo gpasswd -d bob devteam        # remove bob from group
+sudo groupdel devteam
 ```
  
 ---
  
-## ⚠️ Danger Zone — Mistakes to Avoid
- 
-| Mistake | Consequence | Fix |
-|---------|------------|-----|
-| `rm -rf /` | Deletes entire system | Never run this |
-| `rm -rf *` in wrong directory | Deletes everything in current folder | Always `pwd` before `rm -rf` |
-| `>` instead of `>>` | Overwrites file you meant to append | Use `>>` to append |
-| Editing `/etc/sudoers` with `nano` | Can lock you out of sudo | Always use `visudo` |
-| `chmod 777` on sensitive files | Everyone can read and write | Use least permissive setting |
- 
-> 🔥 **Golden rule:** Run `pwd` before any destructive command.
- 
----
- 
-## 🏁 End-of-Day Challenge Answers
+## sudo & su
  
 ```bash
-# 1 — Find and count all .log files under /var
-find /var -name "*.log" 2>/dev/null | wc -l
+# sudo — preferred for DevSecOps (full audit log)
+sudo command                        # run as root
+sudo -u alice command               # run as alice
+sudo -l                             # list your allowed commands
+sudo -i                             # open root login shell
+sudo visudo                         # safely edit /etc/sudoers
+sudo visudo -c                      # validate sudoers syntax only
  
-# 2 — Show only bash-shell users in /etc/passwd
-grep "bash" /etc/passwd
+# su — switch user (needs target's password)
+su                                  # become root
+su - alice                          # switch to alice (login shell)
+su -c "command" alice               # run single command as alice
+exit                                # return to previous user
+```
  
-# 3 — Create directory structure with brace expansion
-mkdir -p ~/devsecops/week1/{notes,labs,scripts}
- 
-# 4 — Count failed SSH attempts
-grep "Failed" /var/log/auth.log 2>/dev/null | wc -l
- 
-# 5 — Find all SUID binaries
-find / -perm -4000 2>/dev/null
+**`/etc/sudoers` rule format:**
+```
+# who   where = (as_whom) commands
+alice   ALL=(ALL) ALL                    # full sudo
+bob     ALL=/usr/bin/systemctl          # restricted to systemctl
+%devops ALL=(ALL) NOPASSWD: ALL         # group, no password (risky!)
 ```
  
 ---
  
-## 🗂️ Key Paths Quick Reference
+## Security Audit Commands
  
-| Path | What Lives Here | Security Check |
-|------|----------------|----------------|
-| `/var/log/auth.log` | SSH + sudo login attempts | `tail -f /var/log/auth.log` |
-| `/etc/shadow` | Password hashes | `ls -la /etc/shadow` (should be root-only) |
-| `/etc/sudoers` | Sudo privilege rules | `sudo visudo` |
-| `/tmp` | World-writable temp files | `ls -la /tmp` (watch for executables) |
-| `/proc` | Live process data | `ls /proc` (each number = a PID) |
-| `~/.ssh/` | SSH keys | `ls -la ~/.ssh/` (id_rsa must be `chmod 600`) |
-| `~/.bashrc` | Shell config + aliases | `cat ~/.bashrc` (attackers add persistence here) |
+```bash
+# Find all setuid binaries (priv-esc vectors)
+find / -perm -4000 -type f 2>/dev/null
+ 
+# Find all setgid binaries
+find / -perm -2000 -type f 2>/dev/null
+ 
+# Find world-writable files (attacker can modify)
+find / -perm -o+w -type f 2>/dev/null
+ 
+# Find world-writable directories
+find / -perm -o+w -type d 2>/dev/null
+ 
+# Find files with no owner (orphaned — suspicious)
+find / -nouser 2>/dev/null
+ 
+# Find recently modified files in /etc (config tampering)
+find /etc -mmin -60 -type f 2>/dev/null
+ 
+# Active sessions & login history
+who                                 # who is logged in
+w                                   # sessions + what they're running
+last                                # recent login history
+lastb                               # failed login attempts (root only)
+ 
+# Suspicious cron jobs
+crontab -l                          # your crontab
+sudo crontab -l                     # root's crontab
+cat /etc/crontab
+ls /etc/cron.*
+```
+ 
+---
+ 
+## Shell Shortcuts
+ 
+| Shortcut | Action |
+|---|---|
+| `↑` / `↓` | Scroll command history |
+| `Ctrl-R` | Reverse-search history |
+| `Ctrl-C` | Interrupt / kill running command |
+| `Ctrl-D` | Logout / end of input |
+| `Tab` | Auto-complete paths & commands |
+| `!!` | Repeat last command |
+| `!sudo` | Repeat last command starting with "sudo" |
+| `Ctrl-L` | Clear screen |
+| `Ctrl-A` / `Ctrl-E` | Jump to start / end of line |
+ 
+---
+ 
+## Package Managers Quick Ref
+ 
+```bash
+# Debian/Ubuntu (apt)
+sudo apt update && sudo apt upgrade
+sudo apt install <package>
+sudo apt remove <package>
+apt search <term>
+ 
+# RHEL/CentOS/Rocky (dnf)
+sudo dnf update
+sudo dnf install <package>
+sudo dnf remove <package>
+dnf search <term>
+```
+ 
+---
+ 
