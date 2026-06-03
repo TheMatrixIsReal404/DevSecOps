@@ -1,6 +1,6 @@
 # 🐧 Linux Command Cheatsheet
 > **Day 1 Reference** — Quick-access commands for CLI navigation, file ops, searching, and system info.  
-> 📌 Sections marked `[Day 2]` will be covered in depth on Day 2 but are included here for completeness.
+
  
 ---
  
