@@ -149,7 +149,7 @@ drwxr-xr-x  2  alice  staff   4096  Jun 03 09:15  Documents
 Build a cheatsheet file and add the filesystem hierarchy table as you study. Annotate each path with a real security scenario — e.g. `/tmp` → "attacker wrote exploit here", `/var/log/auth.log` → "check for brute-force attempts". This sticks far better than passive reading.
  
 ---
----
+
  
 ## Day 2 — Tuesday
 ### Linux Permissions & Users
@@ -405,3 +405,676 @@ Create a test file and practice the full permissions cycle:
 4. Create a shared group directory with setgid and check how new files inherit the group
 5. Run `find / -perm -4000 2>/dev/null` and research each result you find
 ---
+
+
+# 📓 Linux Notes — Day 3 (Wednesday)
+## Bash Scripting Fundamentals
+ 
+> **Week 1 | Phase 1 — Foundations**
+> Reference: *The Linux Command Line* (7th Ed.) — Ch. 24, 25, 26, 32
+ 
+ 
+## 1. Bash Scripting — Core Fundamentals
+ 
+> *"In the simplest terms, a shell script is a file containing a series of commands. The shell reads this file and carries out the commands as though they have been entered directly on the command line."* — The Linux Command Line, Ch. 24
+ 
+### What is a Shell Script?
+A shell script is a plain text file that contains a sequence of shell commands. The shell itself is **both a command-line interface and a scripting language interpreter** — most things you can do on the command line can be done in a script, and vice versa.
+ 
+### The Three Rules of a Working Script
+ 
+To create and run a shell script successfully you need exactly three things:
+ 
+| Step | What to do | Why |
+|---|---|---|
+| 1 | **Write the script** | Use any text editor (vim, nano, gedit). Save as plain text. |
+| 2 | **Make it executable** | `chmod 755 script.sh` — without this, Linux won't run it as a program |
+| 3 | **Place it in PATH** | Put it in `~/bin` so the shell can find it without specifying the full path |
+ 
+---
+ 
+### The Shebang Line (`#!`)
+ 
+```bash
+#!/bin/bash
+```
+ 
+- **Must be the very first line** of every script — even before comments.
+- `#!` is called the **shebang** (hash-bang). It tells the Linux kernel *which interpreter* to use to execute the script.
+- Without the shebang, the shell tries to guess the interpreter, which can cause mysterious failures.
+- The rest of the line is the absolute path to the interpreter: `/bin/bash` for bash scripts.
+```bash
+#!/bin/bash              # Standard bash script
+#!/usr/bin/env python3   # Python script (finds python3 in PATH)
+#!/bin/sh                # POSIX-compliant sh (more portable, fewer features)
+```
+ 
+> **Security Note:** Using `#!/usr/bin/env bash` is more portable across systems where bash may not be at `/bin/bash`, but in security-critical scripts, explicit paths (`/bin/bash`) are preferred because `env` searches PATH, which an attacker could potentially manipulate.
+ 
+### Script File Format Example
+ 
+```bash
+#!/bin/bash
+# This is a comment — the shell ignores everything after #
+# Author: Your Name
+# Date: 2026-06-04
+# Purpose: Demonstrate basic script structure
+ 
+echo "Hello, DevSecOps!"   # Comments can appear at end of lines too
+```
+ 
+---
+ 
+## 2. Variables & Constants
+ 
+### Assigning Variables
+ 
+```bash
+NAME="DevSecOps"          # String — no spaces around the = sign
+AGE=21                    # Number (still treated as a string by bash)
+IS_ACTIVE=true            # Boolean-like (no real boolean type in bash)
+```
+ 
+> ⚠️ **Critical Rule:** There must be **no spaces** around the `=` sign when assigning variables.  
+> `NAME = "DevSecOps"` → **ERROR** (bash thinks `NAME` is a command)  
+> `NAME="DevSecOps"` → **Correct**
+ 
+### Using Variables
+ 
+```bash
+echo $NAME                 # Basic expansion
+echo "${NAME}"             # Safer — braces make boundary explicit
+echo "${NAME}_2026"        # Required when followed immediately by text
+echo "Hello, $NAME!"       # Inside double quotes — expands
+echo 'Hello, $NAME!'       # Inside single quotes — does NOT expand
+```
+ 
+### Variable Naming Rules (from *The Linux Command Line*, Ch. 25)
+ 
+1. Variable names may contain **letters, numbers, and underscores** only
+2. The **first character must be a letter or underscore** — not a number
+3. **No spaces, no punctuation** allowed in variable names
+4. Convention: use **UPPERCASE for constants**, **lowercase for variables**
+```bash
+# Good names
+user_name="alice"
+MAX_RETRIES=3
+LOG_FILE="/var/log/audit.log"
+ 
+# Bad names (will cause errors or bugs)
+2name="wrong"     # starts with digit
+my-var="wrong"    # hyphen not allowed
+my var="wrong"    # space not allowed
+```
+ 
+### Constants (Read-Only Variables)
+ 
+```bash
+declare -r PI=3.14159        # -r flag makes it read-only
+declare -r MAX_SIZE=100
+ 
+PI=3.0                       # This will now throw an error
+```
+ 
+The shell makes **no automatic distinction** between variables and constants — using `declare -r` and uppercase naming is a convention that helps readability and prevents accidental modification.
+ 
+### Variable Scope
+ 
+By default, all variables in bash are **global** within a script. Variables defined in shell functions are also global unless explicitly declared as `local`:
+ 
+```bash
+my_function() {
+    local temp_var="only inside this function"
+    global_var="visible everywhere"
+}
+```
+ 
+---
+ 
+## 3. Command Substitution
+ 
+Command substitution lets you **capture the output of a command** and use it as a value. There are two syntaxes:
+ 
+```bash
+# Modern syntax (preferred — nestable)
+TODAY=$(date +%Y-%m-%d)
+FILE_COUNT=$(ls -1 | wc -l)
+CURRENT_USER=$(whoami)
+UPTIME=$(uptime -p)
+ 
+# Legacy syntax (avoid in new scripts)
+TODAY=`date +%Y-%m-%d`
+```
+ 
+The `$()` syntax is preferred because it **can be nested**:
+ 
+```bash
+# Nested command substitution
+LATEST_LOG=$(ls -t $(find /var/log -name "*.log") | head -1)
+```
+ 
+### Practical Examples
+ 
+```bash
+#!/bin/bash
+# Capture system information dynamically
+HOSTNAME=$(hostname)
+KERNEL=$(uname -r)
+DISK_USAGE=$(df -h / | awk 'NR==2{print $5}')
+MEM_USED=$(free -h | awk '/Mem:/{print $3}')
+DATE=$(date +"%Y-%m-%d %H:%M:%S")
+ 
+echo "=== System Report: $DATE ==="
+echo "Host: $HOSTNAME | Kernel: $KERNEL"
+echo "Disk: $DISK_USAGE used | Memory: $MEM_USED used"
+```
+ 
+---
+ 
+## 4. Special Variables
+ 
+These are automatically set by bash — you never assign them, you only read them:
+ 
+| Variable | Meaning | Example |
+|---|---|---|
+| `$0` | Name/path of the script itself | `./my_script.sh` |
+| `$1`, `$2`, ... `$9` | Positional arguments (what user passed in) | `./script.sh arg1 arg2` → `$1=arg1` |
+| `$#` | Total count of arguments passed | `3` (if 3 args given) |
+| `$@` | All arguments as **separate words** (preferred) | `"arg1" "arg2" "arg3"` |
+| `$*` | All arguments as a **single string** | `"arg1 arg2 arg3"` |
+| `$?` | Exit code of the **last command** run | `0` = success, non-zero = failure |
+| `$$` | PID (process ID) of the current script | `12345` |
+| `$!` | PID of the last background process | useful for tracking background jobs |
+| `$_` | Last argument of the previous command | shortcut for repeating args |
+ 
+### `$@` vs `$*` — The Critical Difference (Ch. 32)
+ 
+This difference only matters inside **double quotes**:
+ 
+```bash
+#!/bin/bash
+# Demonstrating the $@ vs $* difference
+# Run as: ./demo.sh "hello world" "foo bar"
+ 
+echo "--- Using \$@ (correct for loops) ---"
+for arg in "$@"; do
+    echo "  arg: $arg"
+done
+# Output:
+#   arg: hello world
+#   arg: foo bar        ← each argument preserved as a single unit
+ 
+echo "--- Using \$* (loses argument boundaries) ---"
+for arg in "$*"; do
+    echo "  arg: $arg"
+done
+# Output:
+#   arg: hello world foo bar   ← everything becomes ONE string
+```
+ 
+> **Rule:** Always use `"$@"` when passing arguments to another command or iterating over them. `"$*"` collapses everything into one string, destroying argument boundaries.
+ 
+### The `shift` Command — Processing Many Arguments (Ch. 32)
+ 
+`shift` moves all positional parameters **down by one**: `$2` becomes `$1`, `$3` becomes `$2`, and `$#` decreases by one. This lets you process an unlimited number of arguments using just `$1`:
+ 
+```bash
+#!/bin/bash
+# Process all arguments using shift
+count=1
+while [[ $# -gt 0 ]]; do
+    echo "Argument $count = $1"
+    count=$((count + 1))
+    shift        # $2 → $1, $3 → $2, etc.
+done
+```
+ 
+```bash
+$ ./script.sh alpha beta gamma
+Argument 1 = alpha
+Argument 2 = beta
+Argument 3 = gamma
+```
+ 
+### Exit Codes ($?) — Critical for DevSecOps
+ 
+```bash
+# Every command returns an exit code
+ls /etc/passwd
+echo $?           # → 0 (success)
+ 
+ls /nonexistent
+echo $?           # → 2 (error: no such file)
+ 
+# Using $? for error handling
+cp important.conf backup.conf
+if [ $? -eq 0 ]; then
+    echo "Backup successful"
+else
+    echo "Backup FAILED!" >&2
+    exit 1
+fi
+```
+ 
+> **Best Practice:** Check `$?` immediately after a critical command. Once you run another command, the previous exit code is overwritten.
+ 
+### Positional Parameters in Practice
+ 
+```bash
+#!/bin/bash
+# Script: greet_user.sh
+# Usage: ./greet_user.sh Alice Senior
+echo "Hello, $2 $1!"          # Hello, Senior Alice!
+echo "Script name: $0"
+echo "Arguments received: $#"
+echo "All arguments: $@"
+ 
+# Default value if argument not provided
+NAME=${1:-"World"}            # Use $1, or "World" if $1 is unset/empty
+echo "Hello, $NAME!"
+```
+ 
+---
+ 
+## 5. Quoting Rules (Critical!)
+ 
+Quoting is one of the most important (and most misunderstood) aspects of bash scripting. Getting it wrong causes bugs that are very hard to diagnose.
+ 
+### The Three Quoting Modes
+ 
+```bash
+NAME="DevSecOps Engineer"
+ 
+# 1. DOUBLE QUOTES — expands variables and command substitutions
+echo "Hello, $NAME"          # → Hello, DevSecOps Engineer
+echo "Today: $(date)"        # → Today: Thu Jun  4 10:00:00 IST 2026
+echo "Tab:\there"            # → Tab:    here  (escape sequences work)
+ 
+# 2. SINGLE QUOTES — absolutely literal, NO expansion whatsoever
+echo 'Hello, $NAME'          # → Hello, $NAME  (literally)
+echo 'Today: $(date)'        # → Today: $(date)  (literally)
+echo 'Tab:\there'            # → Tab:\there  (no escape processing)
+ 
+# 3. NO QUOTES — word splitting occurs (dangerous with spaces)
+FILE="my file.txt"
+cp $FILE /tmp/               # ERROR: treated as two args: "my" and "file.txt"
+cp "$FILE" /tmp/             # CORRECT: treated as one argument
+```
+ 
+### The Golden Rule
+ 
+> **Always quote variables that might contain spaces or special characters.**  
+> Use `"$variable"` not `$variable` as your default habit.
+ 
+```bash
+# Dangerous — breaks if filename has spaces
+rm $FILE
+ 
+# Safe
+rm "$FILE"
+ 
+# Safe — braces + quotes
+rm "${FILE}"
+```
+ 
+### When Single Quotes Are Useful
+ 
+```bash
+# Passing literal strings to grep (avoid regex interpretation)
+grep '$100' prices.txt          # Looks for literal $100
+grep "$100" prices.txt          # Looks for value of variable $100
+ 
+# In scripts that generate other scripts or configs
+cat > /etc/cron.d/cleanup << 'EOF'
+0 2 * * * root find /tmp -mtime +7 -delete
+EOF
+# The 'EOF' in single quotes prevents expansion inside the here-doc
+```
+ 
+---
+ 
+## 6. Here Documents
+ 
+A **here document** is a third way to pass multi-line text to a command, defined in Ch. 25 of the book. Instead of multiple `echo` calls, you embed a block of text directly in the script and feed it as standard input to a command.
+ 
+### Syntax
+ 
+```bash
+command << TOKEN
+text line 1
+text line 2
+TOKEN
+```
+ 
+The `TOKEN` (commonly `_EOF_`, `EOF`, or `END`) marks the end of the embedded text. It **must appear alone on its own line** with no leading spaces or trailing characters.
+ 
+### Basic Example
+ 
+```bash
+#!/bin/bash
+TITLE="System Information Report"
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
+ 
+cat << _EOF_
+<html>
+  <head><title>$TITLE</title></head>
+  <body>
+    <h1>$TITLE</h1>
+    <p>Generated: $TIMESTAMP</p>
+  </body>
+</html>
+_EOF_
+```
+ 
+By default, variables and command substitutions **expand** inside a here document, just like double quotes.
+ 
+### Suppressing Expansion (Quoted Token)
+ 
+Wrapping the opening token in **single quotes** disables all expansion inside the block — useful when generating scripts or config files:
+ 
+```bash
+cat << 'EOF'
+#!/bin/bash
+# This $VARIABLE will NOT be expanded
+echo "Literal: $HOME"
+EOF
+```
+ 
+### Here Strings (`<<<`)
+ 
+A simpler variant: feeds a **single string** to a command's stdin:
+ 
+```bash
+# Feed a string directly to a command
+grep "error" <<< "no error here"
+read first rest <<< "hello world foo"
+echo $first   # → hello
+echo $rest    # → world foo
+```
+ 
+### Here Doc vs `echo` — When to Use Which
+ 
+| Use `echo` when... | Use here doc when... |
+|---|---|
+| Outputting a single line | Outputting many lines of text |
+| Simple variable printing | Generating config files, HTML, SQL |
+| Quick inline messages | Avoiding lots of escape characters |
+ 
+---
+ 
+## 7. Shell Functions
+ 
+Shell functions let you group commands into a **reusable, named block** — like a mini-script inside your script. Defined in Ch. 26 of the book.
+ 
+### Two Syntax Forms (Both Equivalent)
+ 
+```bash
+# Form 1 — formal (with 'function' keyword)
+function greet {
+    echo "Hello, $1!"
+    return 0
+}
+ 
+# Form 2 — simplified (generally preferred)
+greet () {
+    echo "Hello, $1!"
+    return 0
+}
+```
+ 
+> **Rule:** Function definitions must appear **before** they are called in the script. The shell reads top-to-bottom.
+ 
+### Calling a Function
+ 
+```bash
+greet "DevSecOps"    # → Hello, DevSecOps!
+greet "Alice"        # → Hello, Alice!
+```
+ 
+Functions receive their own positional parameters (`$1`, `$2`, etc.) **separate from the script's** `$1`, `$2`. Inside a function, `$1` is the first argument passed to the *function*, not the script.
+ 
+### Local Variables
+ 
+Without `local`, all variables in a function are **global** and can overwrite variables in the rest of the script. Always use `local` inside functions:
+ 
+```bash
+#!/bin/bash
+foo=0                  # global variable
+ 
+funct_1 () {
+    local foo          # local — only lives inside this function
+    foo=1
+    echo "funct_1: foo = $foo"    # → 1
+}
+ 
+echo "global: foo = $foo"   # → 0
+funct_1
+echo "global: foo = $foo"   # → still 0 (local foo didn't affect global)
+```
+ 
+### Return Values
+ 
+`return` exits the function and sets `$?`. By convention: `0` = success, `1` (or non-zero) = failure.
+ 
+```bash
+is_root () {
+    if [[ $(id -u) -eq 0 ]]; then
+        return 0    # success
+    else
+        return 1    # failure
+    fi
+}
+ 
+if is_root; then
+    echo "Running as root"
+else
+    echo "Not root — some features may be unavailable"
+fi
+```
+ 
+> To return **data** (not just a status), use `echo` inside the function and capture it with command substitution:
+> ```bash
+> get_date () { echo "$(date +%Y-%m-%d)"; }
+> TODAY=$(get_date)
+> ```
+ 
+### Practical Example — Reusable Checks
+ 
+```bash
+#!/bin/bash
+# Color codes
+GREEN='\e[0;32m'; RED='\e[0;31m'; NC='\e[0m'
+ 
+check_port () {
+    local PORT=$1
+    local SERVICE=$2
+    if ss -tulpn 2>/dev/null | grep -q ":${PORT} "; then
+        echo -e "${GREEN}[OPEN]${NC}   Port $PORT ($SERVICE)"
+    else
+        echo -e "${RED}[CLOSED]${NC} Port $PORT ($SERVICE)"
+    fi
+}
+ 
+echo "=== Port Status: $(date) ==="
+check_port 22   "SSH"
+check_port 80   "HTTP"
+check_port 443  "HTTPS"
+```
+ 
+---
+ 
+## 8. Writing & Running Scripts
+ 
+### Step-by-Step Workflow
+ 
+```bash
+# 1. Create the script file
+nano ~/practice/scripts/my_script.sh
+# OR
+vim ~/practice/scripts/my_script.sh
+ 
+# 2. Make it executable
+chmod +x ~/practice/scripts/my_script.sh
+# Common permissions:
+# 755 → owner: rwx, group: r-x, others: r-x (everyone can run)
+# 700 → owner: rwx, group: ---, others: --- (only owner can run)
+ 
+# 3. Run it
+./my_script.sh                     # From current directory (explicit path)
+bash my_script.sh                  # Alternative: pass to bash directly
+~/practice/scripts/my_script.sh    # Full path
+ 
+# 4. Add to PATH (optional, for scripts you use often)
+mkdir -p ~/bin
+cp my_script.sh ~/bin/
+export PATH="$HOME/bin:$PATH"      # Add to ~/.bashrc for permanence
+```
+ 
+### Script File Location Best Practices
+ 
+| Location | Purpose |
+|---|---|
+| `~/bin/` | Personal scripts for your user only |
+| `/usr/local/bin/` | Scripts usable by all users (standard for local software) |
+| `/usr/local/sbin/` | Admin scripts usable by all (system administration tools) |
+| `/etc/cron.d/` | Cron job definitions |
+ 
+> `/bin/` and `/usr/bin/` are managed by your Linux distribution — **never put your own scripts there**.
+ 
+---
+ 
+## 9. Practical Script Writing — 5 Scripts
+ 
+### Script 1: System Info Report (`system_info.sh`)
+ 
+```bash
+#!/bin/bash
+# system_info.sh — Report system statistics
+# Usage: ./system_info.sh
+ 
+echo "=== System Info Report ==="
+echo "Hostname:    $(hostname)"
+echo "User:        $(whoami)"
+echo "Date:        $(date)"
+echo "Uptime:      $(uptime -p)"
+echo "Disk:        $(df -h / | awk 'NR==2{print $5}') used on /"
+echo "Memory:      $(free -h | awk '/Mem:/{print $3}') / $(free -h | awk '/Mem:/{print $2}') used"
+echo "OS:          $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
+echo "Kernel:      $(uname -r)"
+```
+ 
+**Concepts used:** command substitution, `awk` for column extraction, `cat` + `grep` + `cut` pipeline.
+ 
+### Script 2: Log Analyzer (`log_counter.sh`)
+ 
+```bash
+#!/bin/bash
+# log_counter.sh — Count log entries and flag issues
+# Usage: ./log_counter.sh [logfile]
+ 
+LOG_FILE=${1:-/var/log/syslog}    # Default to syslog if no arg given
+ 
+if [ ! -f "$LOG_FILE" ]; then
+    echo "ERROR: $LOG_FILE not found" >&2
+    exit 1
+fi
+ 
+TOTAL=$(wc -l < "$LOG_FILE")
+ERRORS=$(grep -ci 'error' "$LOG_FILE" 2>/dev/null || echo 0)
+WARNINGS=$(grep -ci 'warning' "$LOG_FILE" 2>/dev/null || echo 0)
+ 
+echo "Log file:      $LOG_FILE"
+echo "Total lines:   $TOTAL"
+echo "ERROR count:   $ERRORS"
+echo "WARNING count: $WARNINGS"
+```
+ 
+**Concepts used:** default parameter `${1:-default}`, file existence test `-f`, error redirection `>&2`, `grep -ci` (case-insensitive count).
+ 
+### Script 3: Backup Script (`backup.sh`)
+ 
+```bash
+#!/bin/bash
+# backup.sh — Create a timestamped backup of a directory or file
+# Usage: ./backup.sh <source_path>
+ 
+SOURCE=$1
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+DEST="/tmp/backup_${TIMESTAMP}"
+ 
+# Validate input
+if [ -z "$SOURCE" ]; then
+    echo "Usage: $0 <source_path>" >&2
+    exit 1
+fi
+ 
+if [ ! -e "$SOURCE" ]; then
+    echo "ERROR: $SOURCE does not exist" >&2
+    exit 1
+fi
+ 
+cp -r "$SOURCE" "$DEST" && echo "✓ Backed up '$SOURCE' → '$DEST'" \
+    || echo "✗ Backup FAILED" >&2
+```
+ 
+**Concepts used:** `-z` (empty string test), `-e` (path existence test), `&&` and `||` for inline error handling.
+ 
+### Script 4: User Checker (`user_check.sh`)
+ 
+```bash
+#!/bin/bash
+# user_check.sh — Check if a user exists and show their info
+# Usage: ./user_check.sh <username>
+ 
+USERNAME=${1:-$(whoami)}
+ 
+if id "$USERNAME" &>/dev/null; then
+    echo "User '$USERNAME' EXISTS"
+    echo "UID:    $(id -u $USERNAME)"
+    echo "GID:    $(id -g $USERNAME)"
+    echo "Groups: $(id -Gn $USERNAME)"
+    echo "Home:   $(grep "^$USERNAME:" /etc/passwd | cut -d: -f6)"
+    echo "Shell:  $(grep "^$USERNAME:" /etc/passwd | cut -d: -f7)"
+else
+    echo "User '$USERNAME' does NOT exist" >&2
+    exit 1
+fi
+```
+ 
+**Concepts used:** `id` command, `&>/dev/null` to suppress output, `grep` + `cut` to parse `/etc/passwd`.
+ 
+### Script 5: Port Scanner (`port_check.sh`)
+ 
+```bash
+#!/bin/bash
+# port_check.sh — Check if common ports are open
+# Usage: ./port_check.sh
+ 
+GREEN='\e[0;32m'
+RED='\e[0;31m'
+NC='\e[0m'  # No Color
+ 
+check_port() {
+    local PORT=$1
+    local SERVICE=$2
+    if ss -tulpn 2>/dev/null | grep -q ":${PORT} "; then
+        echo -e "${GREEN}[OPEN]${NC}   Port $PORT ($SERVICE)"
+    else
+        echo -e "${RED}[CLOSED]${NC} Port $PORT ($SERVICE)"
+    fi
+}
+ 
+echo "=== Port Status Report: $(date) ==="
+check_port 22   "SSH"
+check_port 80   "HTTP"
+check_port 443  "HTTPS"
+check_port 3306 "MySQL"
+check_port 5432 "PostgreSQL"
+check_port 6379 "Redis"
+```
+ 
+**Concepts used:** shell functions with `local` variables, color codes (`\e[0;32m`), `ss -tulpn` for port checking.
+ 
+---
+ 
+*Day 3 Notes · Week 1 · Phase 1 — Foundations · #bash-scripting*
