@@ -1077,4 +1077,304 @@ check_port 6379 "Redis"
  
 ---
  
-*Day 3 Notes · Week 1 · Phase 1 — Foundations · #bash-scripting*
+
+
+# Day 4 — Bash Loops & Functions
+> **Session:** 08:00–10:00 | Theory  
+> **Watch:** Udemy Bash Scripting Module — Part 2  
+> **Reference:** *The Linux Command Line* (TLCL) 7th Ed — Chapters 26, 29, 33
+ 
+---
+ 
+## 1. Why Loops?
+ 
+Loops let you repeat a series of commands until some condition is met, making it possible to automate repetitive tasks without writing the same commands over and over. Bash provides three looping constructs: `for`, `while`, and `until`.
+ 
+---
+ 
+## 2. The `for` Loop
+ 
+### 2.1 Traditional Shell Form (Range / List)
+ 
+The basic syntax:
+ 
+```bash
+for variable [in words]; do
+    commands
+done
+```
+ 
+**Example — numeric range using brace expansion:**
+ 
+```bash
+for i in {1..10}; do
+    echo "Iteration: $i"
+done
+```
+ 
+- `{1..10}` generates the sequence 1 through 10.
+- Each iteration assigns the next value to `i`.
+- The variable name `i` is traditional (inherited from Fortran), but any valid variable name works.
+**Example — loop through files matching a glob:**
+ 
+```bash
+for file in /var/log/*.log; do
+    echo "Found: $file ($(wc -l < $file) lines)"
+done
+```
+ 
+- Pathname expansion (`/var/log/*.log`) gives a clean list of matching files.
+- `$(wc -l < $file)` uses command substitution to count lines inside each file.
+- **Tip:** Always guard against failed expansions in scripts:
+  ```bash
+  for file in /var/log/*.log; do
+      if [[ -e "$file" ]]; then
+          echo "$file"
+      fi
+  done
+  ```
+ 
+### 2.2 C-Style `for` Loop
+ 
+Bash also supports a C-language form useful for numeric sequences:
+ 
+```bash
+for (( expression1; expression2; expression3 )); do
+    commands
+done
+```
+ 
+| Expression | Purpose |
+|---|---|
+| `expression1` | Initialise (runs once before the loop starts) |
+| `expression2` | Condition — loop runs while this is true |
+| `expression3` | Increment — runs at the end of each iteration |
+ 
+**Example:**
+ 
+```bash
+for (( i=0; i<5; i=i+1 )); do
+    echo $i
+done
+```
+ 
+Output: `0 1 2 3 4`
+ 
+### 2.3 Key Points
+ 
+- If the `in words` part is omitted, `for` processes the **positional parameters** (`$1`, `$2`, …) — useful in scripts that accept arguments.
+- Use command substitution to generate a word list: `for i in $(cat file.txt); do …`
+- Word splitting **does** occur with command substitution in `for`, which is intentional and useful here.
+---
+ 
+## 3. The `while` Loop
+ 
+Repeats commands as long as a condition (exit status) is **zero (true)**.
+ 
+### Basic Syntax
+ 
+```bash
+while [ condition ]; do
+    commands
+done
+```
+ 
+### 3.1 Simple Counter
+ 
+```bash
+COUNT=0
+while [ $COUNT -lt 5 ]; do
+    echo "Count: $COUNT"
+    ((COUNT++))
+done
+```
+ 
+- `[ $COUNT -lt 5 ]` — evaluates to true while COUNT is less than 5.
+- `((COUNT++))` — arithmetic increment (Bash arithmetic context).
+- **Equivalent `[[ ]]` form:** `while [[ "$COUNT" -lt 5 ]]; do`
+### 3.2 Reading Lines from a File
+ 
+```bash
+while IFS= read -r line; do
+    echo "Processing: $line"
+done < /etc/passwd
+```
+ 
+- `< /etc/passwd` — redirects the file as standard input to the loop (placed **after** `done`).
+- `IFS=` — clears the Internal Field Separator so leading/trailing whitespace is preserved.
+- `-r` flag on `read` — prevents backslash interpretation.
+- Works for any text file; processes one line per iteration.
+**Pipe variant (note: runs in a subshell — variables don't persist):**
+ 
+```bash
+sort file.txt | while read -r line; do
+    echo "$line"
+done
+```
+ 
+### 3.3 Infinite Loop with `break`
+ 
+```bash
+while true; do
+    read -p "Enter selection [1-3, 0 to quit]: " REPLY
+    if [[ "$REPLY" == 0 ]]; then
+        break
+    fi
+    # handle selections…
+done
+```
+ 
+- `true` always exits with status 0, so the loop runs forever.
+- Use `break` to exit the loop from inside.
+- Use `continue` to skip the rest of the current iteration and jump to the next.
+---
+ 
+## 4. The `until` Loop
+ 
+The mirror image of `while` — runs while the condition is **non-zero (false)**:
+ 
+```bash
+count=1
+until [[ "$count" -gt 5 ]]; do
+    echo "$count"
+    count=$((count + 1))
+done
+```
+ 
+Choose `while` or `until` based on whichever makes the condition clearest to read.
+ 
+---
+ 
+## 5. `break` and `continue`
+ 
+| Command | Effect |
+|---|---|
+| `break` | Exit the loop immediately; execution resumes after `done` |
+| `continue` | Skip the rest of the current iteration; jump to the next cycle |
+ 
+These work inside `for`, `while`, and `until`.
+ 
+---
+ 
+## 6. Bash Functions
+ 
+Shell functions are mini-scripts embedded inside a script. They allow you to:
+- Avoid repeating code
+- Break complex tasks into named, manageable pieces (top-down design)
+- Accept arguments (positional parameters)
+- Use local variables isolated from the rest of the script
+### 6.1 Two Syntax Forms
+ 
+**Formal (keyword) form:**
+```bash
+function name {
+    commands
+    return
+}
+```
+ 
+**Preferred (POSIX-compatible) form:**
+```bash
+name () {
+    commands
+    return
+}
+```
+ 
+Both are equivalent. Prefer the second form for portability.
+ 
+### 6.2 A Practical Example — Port Checker
+ 
+```bash
+function check_port() {
+    local PORT=$1
+    if ss -tulpn | grep -q ":$PORT "; then
+        echo -e "\e[0;32m[+] Port $PORT is OPEN\e[0m"
+    else
+        echo -e "\e[0;31m[-] Port $PORT is CLOSED\e[0m"
+    fi
+}
+ 
+check_port 22
+check_port 80
+```
+ 
+**Breaking it down:**
+ 
+| Element | Meaning |
+|---|---|
+| `local PORT=$1` | `$1` is the first argument passed to the function; `local` confines it to this function |
+| `ss -tulpn` | Lists all listening TCP/UDP ports |
+| `grep -q ":$PORT "` | Silently searches for the port number; exit status signals found/not found |
+| `\e[0;32m…\e[0m` | ANSI escape code for green text (32=green, 31=red) |
+| `echo -e` | Enables interpretation of escape sequences |
+ 
+### 6.3 Local Variables
+ 
+Variables declared with `local` only exist inside their function:
+ 
+```bash
+foo=0           # global variable
+ 
+my_func () {
+    local foo   # local to my_func
+    foo=99
+    echo "Inside: $foo"   # prints 99
+}
+ 
+my_func
+echo "Outside: $foo"      # prints 0 — unchanged
+```
+ 
+- `local` prevents functions from accidentally overwriting global variables.
+- Makes functions self-contained and reusable across scripts.
+### 6.4 Rules and Best Practices
+ 
+- Functions **must be defined before they are called** in a script.
+- A function must contain **at least one command** (`return` counts).
+- Functions receive arguments as positional parameters (`$1`, `$2`, `$@`).
+- Functions can be redirected just like any other command: `my_func > output.txt`
+- You can store a function's output in a variable: `result="$(my_func)"`
+- Add frequently used functions to `~/.bashrc` to make them available in every session.
+---
+ 
+## 7. Combining Loops and Functions
+ 
+```bash
+check_ports () {
+    local port
+    for port in "$@"; do
+        if ss -tulpn | grep -q ":$port "; then
+            echo "[+] Port $port: OPEN"
+        else
+            echo "[-] Port $port: CLOSED"
+        fi
+    done
+}
+ 
+check_ports 22 80 443 3306
+```
+ 
+- `"$@"` expands to all arguments passed to the function, each as a separate word.
+- The `for` loop iterates over each port number.
+---
+ 
+## 8. Key Takeaways
+ 
+1. Use `for` when you know the list of items upfront (files, ranges, arguments).
+2. Use `while` when you loop until a condition changes (counters, reading input/files).
+3. Use `until` when it reads more naturally than `while [ ! condition ]`.
+4. Always use `local` for function variables to avoid side effects.
+5. Put the input-redirection operator (`< file`) **after** `done`, not inside the loop.
+6. `IFS= read -r line` is the correct idiom for reading file lines safely.
+7. `break` exits the loop; `continue` moves to the next iteration.
+8. Functions must be defined before they are called.
+---
+ 
+## 9. Further Reading
+ 
+- TLCL Ch. 29 — *Flow Control: Looping with while / until*
+- TLCL Ch. 33 — *Flow Control: Looping with for*
+- TLCL Ch. 26 — *Top-Down Design* (Shell Functions)
+- Bash Reference Manual — Looping Constructs: https://www.gnu.org/software/bash/manual/bashref.html#Looping-Constructs
+- Advanced Bash-Scripting Guide — Loops: https://tldp.org/LDP/abs/html/loops1.html
