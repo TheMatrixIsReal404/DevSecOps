@@ -1378,3 +1378,431 @@ check_ports 22 80 443 3306
 - TLCL Ch. 26 — *Top-Down Design* (Shell Functions)
 - Bash Reference Manual — Looping Constructs: https://www.gnu.org/software/bash/manual/bashref.html#Looping-Constructs
 - Advanced Bash-Scripting Guide — Loops: https://tldp.org/LDP/abs/html/loops1.html
+
+
+# 📅 Day 5 — Friday
+ 
+## Advanced Bash: cron, systemd & Networking Commands
+ 
+> **Tags:** `#friday` `#day5` `#cron` `#systemd` `#networking` `#devsecops`
+ 
+---
+ 
+## 🕗 08:00–10:00 | Theory — cron, systemd & Networking Commands
+ 
+---
+ 
+## 1️⃣ cron — Scheduling Automation
+ 
+> **"Used in every DevSecOps pipeline"**
+> `cron` is the traditional Unix tool for running commands on a predetermined schedule. It starts at boot and runs as long as the system is up.
+> *(Source: UNIX and Linux System Administration Handbook, 5th Ed., Ch. 4)*
+ 
+### What is cron?
+ 
+- `cron` reads configuration files (called **crontabs**) containing lists of commands and the times they should run.
+- Any command you can run from the shell can be automated with cron.
+- Commands are executed via `sh`, so pipes, redirects, and shell features all work.
+- On Red Hat/CentOS, `cron` is renamed `crond` — same tool, different name.
+### Basic crontab Commands
+ 
+```bash
+crontab -e    # Edit your cron jobs (opens in $EDITOR)
+crontab -l    # List your current cron jobs
+crontab -r    # Remove your crontab entirely (use with caution!)
+```
+ 
+> ⚠️ **Always use `crontab -e`** — never edit crontab files directly. Direct edits may not be noticed by the cron daemon.
+ 
+### Cron Syntax — The 5-Field Time Spec
+ 
+```
+# MIN   HOUR   DAY   MONTH   WEEKDAY   COMMAND
+# (0-59)(0-23)(1-31)(1-12)  (0-6=Sun-Sat)
+```
+ 
+| Field   | Description      | Range            |
+|---------|------------------|------------------|
+| minute  | Minute of hour   | 0–59             |
+| hour    | Hour of day      | 0–23             |
+| dom     | Day of month     | 1–31             |
+| month   | Month of year    | 1–12             |
+| weekday | Day of week      | 0–6 (0 = Sunday) |
+ 
+**Each field can contain:**
+- `*` — matches everything (every minute/hour/day/etc.)
+- A single integer — matches exactly (e.g., `5`)
+- A range with dash — e.g., `1-5` (Monday through Friday)
+- A step value — e.g., `*/5` (every 5 units), `0-18/3` (every 3 from 0 to 18)
+- A comma-separated list — e.g., `1,3,5` (Mon, Wed, Fri)
+### Cron Schedule Examples
+ 
+```bash
+# MIN   HOUR  DAY  MONTH  WEEKDAY  COMMAND
+  *     *     *    *      *        command     # Every minute
+  0     2     *    *      *        cmd         # Every day at 2 AM
+  */5   *     *    *      *        cmd         # Every 5 minutes
+  0     9     *    *      1-5      cmd         # Weekdays (Mon-Fri) at 9 AM
+  0     20    *    *      *        /home/$USER/devsecops-week1/log_auto_commit.sh
+  # ↑ Run auto-commit script every day at 8 PM
+ 
+  45    10    *    *      1-5      cmd         # 10:45 AM, Mon–Fri
+  20    1     *    *      *        find /tmp -mtime +7 -type f -exec rm -f {} ';'
+  # ↑ Clean up /tmp files older than 7 days, every morning at 1:20 AM
+```
+ 
+### 💡 Pro Tips for cron
+ 
+```bash
+# Use absolute paths in cron — PATH may not be set as expected
+* * * * * /bin/echo $(/bin/date) >> ~/uptime.log
+ 
+# Make scripts executable before scheduling them
+chmod +x ~/scripts/myscript.sh
+ 
+# Or explicitly invoke the shell
+0 * * * * bash -c ~/bin/myscript.sh
+ 
+# Suppress email output by redirecting to /dev/null
+0 2 * * * /path/to/script.sh > /dev/null 2>&1
+ 
+# Check cron logs if jobs don't seem to run
+cat /var/log/cron
+```
+ 
+### System-Wide crontabs
+ 
+| Location              | Purpose                                           |
+|-----------------------|---------------------------------------------------|
+| `/etc/crontab`        | System-wide crontab; admins edit manually         |
+| `/etc/cron.d/`        | Packages drop their crontab entries here          |
+| `/etc/cron.hourly/`   | Scripts here run every hour                       |
+| `/etc/cron.daily/`    | Scripts here run every day                        |
+| `/etc/cron.weekly/`   | Scripts here run every week                       |
+ 
+> **Key difference:** System crontab files include an extra **username** field before the command, since they can run as any user.
+ 
+### cron Access Control
+ 
+- `/etc/cron.allow` — whitelist: only listed users can use crontab
+- `/etc/cron.deny` — blacklist: everyone except listed users can use crontab
+- If neither file exists: most systems default to allowing all users
+---
+ 
+## 2️⃣ systemd — Service Management
+ 
+> `systemd` is a modern replacement for the traditional Unix `init` system. It manages services, handles boot, and provides centralized logging.
+> *(Source: UNIX and Linux System Administration Handbook, 5th Ed., Ch. 2)*
+ 
+### What is systemd?
+ 
+- Not a single daemon — it's a **collection of programs, daemons, libraries, and kernel components**
+- All major Linux distributions (Ubuntu, Debian, Fedora, CentOS, Arch) now use systemd
+- Manages **units**: services, sockets, devices, timers, mount points, and more
+- Each unit is defined by a **unit file** (stored in `/usr/lib/systemd/system/` or `/etc/systemd/system/`)
+### systemctl — The Main Control Command
+ 
+`systemctl` is the all-purpose command to manage systemd services.
+ 
+```bash
+# ── Check service status ──────────────────────────────────────────
+systemctl status ssh              # Show status of SSH service
+systemctl status nginx            # Show status + recent logs for nginx
+ 
+# ── Start / Stop / Restart ───────────────────────────────────────
+systemctl start nginx             # Start nginx immediately
+systemctl stop nginx              # Stop nginx immediately
+systemctl restart nginx           # Restart (stop + start) nginx
+ 
+# ── Enable / Disable (boot behaviour) ────────────────────────────
+systemctl enable nginx            # Start nginx automatically on boot
+systemctl disable nginx           # Don't start nginx on boot
+ 
+# ── List units ───────────────────────────────────────────────────
+systemctl list-units --type=service           # All active services
+systemctl list-unit-files --type=service      # All installed services
+ 
+# ── Reload systemd after editing unit files ───────────────────────
+systemctl daemon-reload           # Reload after changing .service files
+```
+ 
+### Unit File Statuses
+ 
+| State      | Meaning                                              |
+|------------|------------------------------------------------------|
+| `enabled`  | Installed, will start automatically at boot          |
+| `disabled` | Present, but won't start automatically               |
+| `active`   | Currently running                                    |
+| `inactive` | Not running                                          |
+| `masked`   | Blocked from starting (even manually)                |
+| `static`   | No install section; activated only as a dependency   |
+| `bad`      | Problem with the unit file                           |
+ 
+### Example: systemctl status output
+ 
+```bash
+$ systemctl status nginx
+● nginx.service - A high performance web server
+   Loaded: loaded (/lib/systemd/system/nginx.service; enabled)
+   Active: active (running) since Fri 2024-01-05 08:00:01 UTC; 2h 15min ago
+ Main PID: 1234 (nginx)
+```
+ 
+### journalctl — Reading systemd Logs
+ 
+> systemd's journal (`journald`) captures all kernel and service messages from boot to shutdown, stored in `/run` directory.
+> *(Source: UNIX and Linux System Administration Handbook, 5th Ed., Ch. 10)*
+ 
+```bash
+# ── Follow logs in real time ──────────────────────────────────────
+journalctl -u nginx -f             # Follow nginx service logs (like tail -f)
+journalctl -f                      # Follow ALL system logs in real time
+ 
+# ── Filter by time ───────────────────────────────────────────────
+journalctl --since "1 hour ago"    # Logs from the last hour
+journalctl --since=yesterday --until=now  # Since midnight yesterday
+journalctl --since "2024-01-05 08:00" --until "2024-01-05 10:00"
+ 
+# ── Filter by service ────────────────────────────────────────────
+journalctl -u nginx                # All nginx logs
+journalctl -b 0 -u ssh            # SSH logs from current boot session
+ 
+# ── Useful extras ────────────────────────────────────────────────
+journalctl --list-boots            # List all boot sessions
+journalctl -b -1                   # Logs from previous boot
+journalctl -n 100 /usr/sbin/sshd  # Last 100 entries for a binary
+journalctl --disk-usage            # How much disk space the journal uses
+```
+ 
+### Example Unit File (for reference)
+ 
+```ini
+# /etc/systemd/system/myapp.service
+[Unit]
+Description=My DevSecOps App
+After=network.target
+ 
+[Service]
+ExecStart=/usr/bin/python3 /opt/myapp/app.py
+Restart=always
+ 
+[Install]
+WantedBy=multi-user.target
+```
+ 
+After creating/editing: `sudo systemctl daemon-reload && sudo systemctl enable myapp`
+ 
+---
+ 
+## 3️⃣ Networking Commands — Every DevSecOps Engineer Needs These
+ 
+> *(Source: UNIX and Linux System Administration Handbook, 5th Ed., Ch. 13)*
+ 
+### ping — Test Connectivity
+ 
+```bash
+ping google.com -c 4    # Send 4 ICMP echo packets to google.com
+ping -n google.com      # Don't resolve hostnames (faster, avoids DNS issues)
+ping -s 1500 host       # Send large packet (test fragmentation / MTU)
+```
+ 
+**What ping tells you:**
+- Whether a host is alive and connected to the network
+- Round-trip time (RTT) — consistency matters more than raw speed
+- Dropped packets (discontinuities in sequence numbers = packet loss)
+> 💡 `google.com` is a reliable ping target. Some hosts block ICMP — don't conclude a host is down just because ping fails.
+ 
+**Example output:**
+```
+64 bytes from 142.250.195.78: icmp_seq=1 ttl=54 time=12.3 ms
+64 bytes from 142.250.195.78: icmp_seq=2 ttl=54 time=11.8 ms
+--- google.com ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss
+```
+ 
+---
+ 
+### traceroute — Trace Network Path
+ 
+```bash
+traceroute google.com    # Show every hop (gateway) to reach google.com
+```
+ 
+**How it works:** Sends packets with increasing TTL (Time To Live). Each router decrements TTL by 1; when it hits 0, the router sends back an ICMP "time exceeded" error, revealing itself.
+ 
+**Example output:**
+```
+traceroute to google.com (142.250.195.78), 30 hops max
+ 1  192.168.1.1 (192.168.1.1)    1.2 ms
+ 2  10.10.50.1  (10.10.50.1)     8.4 ms
+ 3  72.14.232.1 (72.14.232.1)   14.1 ms
+...
+12  google.com  (142.250.195.78) 22.3 ms
+```
+ 
+> `* * *` on a hop means that router doesn't reply to ICMP — not necessarily a problem.
+ 
+---
+ 
+### nslookup — Quick DNS Lookup
+ 
+```bash
+nslookup github.com           # Look up IP address of github.com
+nslookup github.com 8.8.8.8   # Query a specific DNS server (Google's)
+```
+ 
+**Use cases:** Quickly check what IP a domain resolves to, or verify DNS is working.
+ 
+---
+ 
+### dig — Detailed DNS Info
+ 
+```bash
+dig github.com                  # Full DNS query output for github.com
+dig github.com MX               # Query for Mail Exchange records
+dig github.com NS               # Query Name Server records
+dig @8.8.8.8 github.com         # Query Google's DNS server specifically
+dig +trace github.com           # Trace the full resolution from root servers
+dig -x 140.82.113.4             # Reverse lookup (IP → hostname)
+```
+ 
+> `dig` is the power tool for DNS. While `nslookup` is quick and friendly, `dig` gives you raw, complete, authoritative answers — essential for debugging DNS issues.
+>
+> **Key output sections:**
+> - `QUESTION SECTION` — what you asked
+> - `ANSWER SECTION` — the actual answer
+> - `AUTHORITY SECTION` — which server answered
+> - `aa` flag in output = authoritative answer (directly from the zone's server)
+ 
+---
+ 
+### curl -I — HTTP Headers Only
+ 
+```bash
+curl -I https://github.com         # Fetch only HTTP response headers (HEAD request)
+curl -v https://github.com         # Verbose: show full request + response headers
+curl -s -v -o /dev/null http://site.com  # Show headers, discard body
+curl -O https://example.com/file.tar.gz  # Download a file
+curl -H "Host: www.mysite.com" http://IP  # Set custom header (bypass DNS)
+```
+ 
+**What `-I` shows you:**
+```
+HTTP/2 200
+server: GitHub.com
+content-type: text/html
+x-frame-options: deny
+...
+```
+ 
+> **Why DevSecOps uses curl:** Test API endpoints, verify TLS certificates, check HTTP response codes, simulate browser requests without opening a browser. It's your swiss army knife for HTTP.
+ 
+---
+ 
+### ip addr — Show Network Interfaces
+ 
+```bash
+ip addr                     # List all network interfaces and their IP addresses
+ip addr show eth0           # Show details for a specific interface
+ip address add 192.168.1.10/24 dev eth0  # Assign an IP to an interface
+```
+ 
+**Example output:**
+```
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+    link/ether 00:11:22:33:44:55 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0
+```
+ 
+> `ip addr` is the modern replacement for the deprecated `ifconfig`. It's part of the `iproute2` package and gives access to the full Linux networking stack.
+ 
+---
+ 
+### ip route — Show Routing Table
+ 
+```bash
+ip route                    # Show the routing table
+ip route show               # Same as above (verbose form)
+ip route add 10.0.0.0/8 via 192.168.1.1  # Add a static route
+ip route del 10.0.0.0/8     # Remove a route
+```
+ 
+**Example output:**
+```
+default via 192.168.1.1 dev eth0 proto dhcp
+192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.100
+```
+ 
+> The routing table tells Linux **where to send packets**. `default via X.X.X.X` is your gateway — the exit point for all traffic not matching a more specific route.
+ 
+---
+ 
+## 🧠 Quick Reference — All Day 5 Commands
+ 
+### cron
+ 
+| Command            | Action                          |
+|--------------------|---------------------------------|
+| `crontab -e`       | Edit your cron jobs             |
+| `crontab -l`       | List your cron jobs             |
+| `crontab -r`       | Remove your crontab             |
+ 
+**Cron syntax reminder:**
+```
+MIN(0-59)  HOUR(0-23)  DAY(1-31)  MONTH(1-12)  WEEKDAY(0-6)  COMMAND
+```
+ 
+### systemd
+ 
+| Command                             | Action                         |
+|-------------------------------------|--------------------------------|
+| `systemctl status <svc>`            | Show service status            |
+| `systemctl start/stop/restart <svc>`| Control service                |
+| `systemctl enable <svc>`            | Auto-start on boot             |
+| `systemctl disable <svc>`           | Disable auto-start             |
+| `journalctl -u <svc> -f`            | Follow service logs            |
+| `journalctl --since "1 hour ago"`   | Filter logs by time            |
+ 
+### Networking
+ 
+| Command                    | Action                           |
+|----------------------------|----------------------------------|
+| `ping google.com -c 4`     | Test connectivity (4 packets)    |
+| `traceroute google.com`    | Trace network path               |
+| `nslookup github.com`      | Quick DNS lookup                 |
+| `dig github.com`           | Detailed DNS info                |
+| `curl -I https://github.com`| HTTP response headers only      |
+| `ip addr`                  | Show network interfaces          |
+| `ip route`                 | Show routing table               |
+ 
+---
+ 
+## 📝 Practice Tasks
+ 
+```bash
+# 1. Schedule a cron job to write the date to a log file every minute
+crontab -e
+# Add: * * * * * echo $(date) >> ~/cron-test.log
+ 
+# 2. Check status of ssh and nginx
+systemctl status ssh
+systemctl status nginx
+ 
+# 3. Follow nginx logs for 30 seconds
+journalctl -u nginx -f
+ 
+# 4. Run all networking diagnostics
+ping google.com -c 4
+traceroute google.com
+nslookup github.com
+dig github.com
+curl -I https://github.com
+ip addr
+ip route
+ 
+# 5. Schedule the networking check to run every day at midnight
+crontab -e
+# Add: 0 0 * * * ping -c 4 google.com >> ~/network-check.log 2>&1
+```
+ 
+---
