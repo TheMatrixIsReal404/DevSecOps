@@ -811,3 +811,232 @@ their code here
 ---
  
 *Notes for Day 9 — Week 2, Day 2 | DevSecOps Learning Journey*
+
+
+# Day 11 (Week 2 — Day 4) · Pre-Commit Hooks & Strings Basics
+ 
+## 🔒 DevSecOps — Pre-Commit Security Hooks
+ 
+**Today's Goal:** Build and install a pre-commit hook that prevents secrets from leaking into Git history.
+ 
+---
+ 
+## 📖 Concepts Learned
+ 
+### 1. Git Hooks Overview
+- Hooks live in `.git/hooks/` — scripts that Git runs automatically at certain points in the workflow.
+- Each hook is just an executable script (any language, but `#!/bin/bash` is common).
+- Hooks are **local only** by default — not committed to the repo (the `.git` folder isn't tracked), so each dev/machine needs them set up individually.
+- Key hook types:
+  - **pre-commit** — runs before a commit is created. If it exits non-zero, the commit is aborted. Used for linting, formatting, secret scanning.
+  - **commit-msg** — runs after the commit message is written, can validate/enforce message format (e.g., Conventional Commits).
+  - **pre-push** — runs before `git push` sends data to the remote. Good last line of defense (e.g., run tests, block pushing secrets that slipped past pre-commit).
+### 2. git-secrets Tool
+- Open-source tool (by AWS Labs) that scans commits/diffs for patterns matching credentials, especially AWS keys.
+- Already installed in Week 1 ✅
+- Core commands:
+  - `git secrets --install` — installs git-secrets hooks (pre-commit, commit-msg, prepare-commit-msg) into the current repo.
+  - `git secrets --register-aws` — adds AWS-specific regex patterns (access keys, secret keys) to the repo's git-secrets config.
+  - `git secrets --scan` — manually scan files/history for matches.
+- Provider rules = predefined regex sets for known credential formats (currently AWS; can add custom patterns too).
+### 3. Regex for Secret Detection
+Patterns commonly used to catch leaked secrets:
+- **AWS Access Key ID:** `AKIA[0-9A-Z]{16}` — always starts with `AKIA` followed by 16 uppercase alphanumeric chars.
+- **Private key headers:** `-----BEGIN` (matches `-----BEGIN RSA PRIVATE KEY-----`, `-----BEGIN OPENSSH PRIVATE KEY-----`, etc.)
+- **Hardcoded passwords:** `password\s*=\s*['"][^'"]+['"]` — matches `password = "something"` or `password='something'` assignments.
+### 4. Conventional Commits Validation
+- A `commit-msg` hook can enforce the [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat: ...`, `fix: ...`, `chore: ...`) using a regex check on the commit message file.
+- Rejects commits whose message doesn't match the expected prefix/structure.
+---
+ 
+## 🛠️ Hands-On Tasks
+ 
+### Install git-secrets
+- [x] `brew install git-secrets` / `apt install git-secrets` (done in Week 1)
+- [x] `git secrets --install` — already done in Week 1
+- [x] `git secrets --register-aws` — already done in Week 1
+- [ ] Test: try committing a fake AWS key (e.g., `AKIA*************`) → commit should be **blocked**
+> **Important consequence:** because `git secrets --install` already created `.git/hooks/pre-commit` (and `commit-msg`, `prepare-commit-msg`), this file **already exists and is already executable**. Today's custom script must be **added into that existing file**, not created fresh — see the "How to install/use this script" section below.
+ 
+### Write a Basic Pre-Commit Regex Scanner
+ 
+This is a **custom secondary scanner** that complements git-secrets by checking for additional patterns (private key headers, hardcoded passwords) using plain bash + grep.
+ 
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+STAGED=$(git diff --cached --name-only)
+ 
+PATTERNS=(
+  'AKIA[0-9A-Z]{16}'
+  '\-\-\-\-\-BEGIN'
+  'password\s*=\s*['"'"'"][^'"'"'"]+['"'"'"]'
+)
+ 
+for file in $STAGED; do
+  for pattern in "${PATTERNS[@]}"; do
+    if git show ":$file" | grep -qE "$pattern"; then
+      echo -e "\033[0;31m[BLOCKED] Secret pattern found in $file: $pattern\033[0m"
+      exit 1
+    fi
+  done
+done
+```
+ 
+#### What this script does, step by step:
+ 
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+STAGED=$(git diff --cached --name-only)
+```
+- `#!/bin/bash` — tells Git to run this file using bash.
+- `git diff --cached --name-only` — lists only the **filenames** that are staged (added with `git add`) for the upcoming commit. `--cached` means "compare against the staging area", `--name-only` strips out the actual diff content and just gives filenames, one per line.
+- This list is stored in `STAGED` as a space/newline-separated string.
+```bash
+PATTERNS=(
+  'AKIA[0-9A-Z]{16}'
+  '\-\-\-\-\-BEGIN'
+  'password\s*=\s*['"'"'"][^'"'"'"]+['"'"'"]'
+)
+```
+- A bash **array** of regex patterns, each representing a type of secret to detect:
+  - `AKIA[0-9A-Z]{16}` — matches AWS Access Key IDs (always start with `AKIA`, followed by exactly 16 uppercase letters/digits).
+  - `\-\-\-\-\-BEGIN` — matches the start of any PEM-formatted private key block, e.g. `-----BEGIN RSA PRIVATE KEY-----`, `-----BEGIN OPENSSH PRIVATE KEY-----`, `-----BEGIN CERTIFICATE-----`.
+  - `password\s*=\s*['"][^'"]+['"]` — matches hardcoded password assignments like `password = "abc123"` or `password='secret'`. `\s*` allows optional spaces around `=`, and `['"][^'"]+['"]` matches a quoted value.
+```bash
+for file in $STAGED; do
+  for pattern in "${PATTERNS[@]}"; do
+```
+- **Outer loop:** iterates over each staged filename.
+- **Inner loop:** for each file, iterates over every pattern in the `PATTERNS` array (`"${PATTERNS[@]}"` expands to all elements, properly quoted).
+```bash
+    if git show ":$file" | grep -qE "$pattern"; then
+```
+- `git show ":$file"` — prints the **staged (index) version** of the file's content. This is critical: it checks what will actually be committed, not what's currently sitting in your working directory (which may have additional unstaged edits).
+- `grep -qE "$pattern"` — `-E` enables extended regex (so `{16}`, `+`, etc. work without escaping), `-q` suppresses output and just sets the exit status: `0` if a match is found, `1` if not.
+- The `if` checks: "does the staged content of this file match this secret pattern?"
+```bash
+      echo -e "\033[0;31m[BLOCKED] Secret pattern found in $file: $pattern\033[0m"
+      exit 1
+    fi
+  done
+done
+```
+- If a match is found:
+  - `echo -e "\033[0;31m...\033[0m"` — prints a message in **red text**. `\033[0;31m` is the ANSI escape code for red, `\033[0m` resets the color back to normal.
+  - The message shows exactly which file and which pattern triggered the block.
+  - `exit 1` — non-zero exit code tells Git "abort the commit". Git will print "the pre-commit hook failed" and the commit will **not** be created.
+- If no file matches any pattern, both loops finish normally, the script reaches the end (implicit `exit 0`), and Git proceeds with the commit.
+---
+ 
+## 📋 How to Install and Use This Script (Step-by-Step)
+ 
+Since `git secrets --install` (Week 1) already created `.git/hooks/pre-commit` as a git-secrets-managed script, you have **two safe options**. Option A (recommended) keeps both layers of protection working together.
+ 
+### Option A — Append this script's logic to the existing git-secrets hook (recommended)
+ 
+1. **Check what's currently in the hook file:**
+```bash
+   cat .git/hooks/pre-commit
+```
+   You should see content referencing `git-secrets` (it calls `git secrets --pre_commit_hook`).
+ 
+2. **Open the existing hook file for editing:**
+```bash
+   nano .git/hooks/pre-commit
+```
+   (or use `vim`, `code`, etc.)
+ 
+3. **Append the custom scanner logic at the end of the file** (keep the existing git-secrets lines at the top — do not delete them). Add this block below the existing content:
+```bash
+   # --- Custom secret pattern scanner (Day 11) ---
+   STAGED=$(git diff --cached --name-only)
+ 
+   PATTERNS=(
+     'AKIA[0-9A-Z]{16}'
+     '\-\-\-\-\-BEGIN'
+     'password\s*=\s*['"'"'"][^'"'"'"]+['"'"'"]'
+   )
+ 
+   for file in $STAGED; do
+     for pattern in "${PATTERNS[@]}"; do
+       if git show ":$file" | grep -qE "$pattern"; then
+         echo -e "\033[0;31m[BLOCKED] Secret pattern found in $file: $pattern\033[0m"
+         exit 1
+       fi
+     done
+   done
+```
+ 
+4. **Save and exit** the editor.
+5. **Ensure it's executable** (should already be, but double-check):
+```bash
+   chmod +x .git/hooks/pre-commit
+```
+ 
+### Option B — Run as a separate "second-opinion" hook
+ 
+Git only executes one `pre-commit` hook per repo, but you can manually invoke a second script from inside the first:
+ 
+1. Save the new logic as a separate file, e.g. `.git/hooks/pre-commit-custom`:
+```bash
+   nano .git/hooks/pre-commit-custom
+```
+   Paste the full script (including `#!/bin/bash`).
+ 
+2. Make it executable:
+```bash
+   chmod +x .git/hooks/pre-commit-custom
+```
+ 
+3. At the **end** of the existing `.git/hooks/pre-commit` (git-secrets file), add:
+```bash
+   .git/hooks/pre-commit-custom || exit 1
+```
+   This calls the custom script and aborts the commit if it fails too.
+ 
+---
+ 
+## ✅ Testing the Combined Hook
+ 
+1. **Test the "should block" case — fake AWS key:**
+```bash
+   echo 'AWS_KEY="AKIA*************"' > secret_test.txt
+   git add secret_test.txt
+   git commit -m "test: fake secret"
+```
+   Expected: commit aborts. You should see either git-secrets' own block message, or this script's red `[BLOCKED]` message (depending on which check matches first).
+ 
+2. **Test the "should block" case — hardcoded password:**
+```bash
+   echo 'password = "supersecret123"' > pw_test.txt
+   git add pw_test.txt
+   git commit -m "test: hardcoded password"
+```
+   Expected: red `[BLOCKED] Secret pattern found in pw_test.txt: password\s*=\s*['"][^'"]+['"]` message, commit aborted.
+ 
+3. **Test the "should block" case — private key:**
+```bash
+   printf -- '-----BEGIN RSA PRIVATE KEY-----\nFAKEDATA\n-----END RSA PRIVATE KEY-----\n' > key_test.txt
+   git add key_test.txt
+   git commit -m "test: fake private key"
+```
+   Expected: commit aborted with `[BLOCKED]` message referencing `key_test.txt`.
+ 
+4. **Test the "should pass" case — clean file:**
+```bash
+   echo 'console.log("hello world")' > clean_test.txt
+   git add clean_test.txt
+   git commit -m "test: clean file"
+```
+   Expected: commit **succeeds** normally — no false positives.
+ 
+5. **Clean up test files afterward** (if the clean commit went through, just remove/revert the test files and commit again, or use `git reset --hard` if you want to undo everything from this testing session — be careful, this discards uncommitted changes).
+---
+ 
+## 📝 Gotchas & Tips
+- `git show ":$file"` only works for files that are tracked and staged — if a file is staged for **deletion**, `git show ":$file"` will fail; you may want to add a check to skip deleted files (`git diff --cached --name-status` shows status codes like `D` for deleted).
+- The password regex uses single quotes around the pattern but the pattern itself contains single quotes (`'"'"'"` is bash's way of embedding a literal `'` inside a single-quoted string) — be careful copying this exactly.
+- If a pattern legitimately appears in a comment or test fixture (false positive), you can either refine the regex or add a temporary bypass with `git commit --no-verify` (use sparingly — this skips **all** hooks, including git-secrets).
+- Consider versioning this hook script inside the repo (e.g. `scripts/hooks/pre-commit`) with a setup script that copies/symlinks it into `.git/hooks/`, so every teammate gets the same protection after cloning.
