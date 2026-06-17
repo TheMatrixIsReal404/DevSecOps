@@ -1,0 +1,50 @@
+DATE    : 2024-__-__
+COMMAND : dig example.com MX
+PURPOSE : Find mail servers for a domain — key for email security (SPF/DKIM/DMARC)
+═══════════════════════════════════════════════════════════
+
+[PASTE OUTPUT HERE]
+
+Example of what you should see (using google.com):
+─────────────────────────────────
+; <<>> DiG 9.18.x <<>> google.com MX
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 54321
+
+;; QUESTION SECTION:
+;google.com.                    IN      MX
+
+;; ANSWER SECTION:
+google.com.             3600    IN      MX      10 smtp.google.com.
+─────────────────────────────────
+                                         ↑
+                                    Priority number
+                                    Lower = preferred
+                                    (if multiple MX records exist,
+                                     lowest number gets email first)
+
+═══════════════════════════════════════════════════════════
+FILL IN AFTER RUNNING:
+
+MX Records found:
+  Priority | Mail Server
+  ──────── | ───────────
+  ___      | ___
+  ___      | ___
+  ___      | ___
+
+TTL of MX records : ___
+Query time         : ___ ms
+
+WHY THIS MATTERS FOR SECURITY:
+- MX records reveal which email provider a target uses (Google, Microsoft, Proofpoint...)
+- Attackers use this to craft targeted phishing emails
+- SPF/DKIM/DMARC records (in TXT) protect against email spoofing
+
+BONUS — also run:
+  dig example.com TXT   → look for "v=spf1" record (email authentication)
+  dig example.com +short MX  → clean list of mail servers only
+
+QUESTIONS THIS RAISED:
+-
