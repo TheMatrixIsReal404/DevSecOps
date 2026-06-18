@@ -359,3 +359,303 @@ HTTP Status Codes:
 > 2. **Is the certificate valid?** (TLS chain of trust)
 > 3. **What does DNS leakage reveal?** (subdomains = attack surface)
 > 4. **Which version?** (TLS 1.0? Vulnerable. HTTP/1.1? Inefficient.)
+
+# 🔐 Week 3 — Day 17: VPCs, Subnets, CIDR Blocks & Routing Tables
+ 
+> **Goal:** Be able to design a basic VPC layout and do CIDR math without a calculator.
+ 
+---
+ 
+## 1.0 — What is a VPC?
+ 
+A **VPC (Virtual Private Cloud)** is an isolated virtual network inside a cloud provider (AWS, GCP, Azure).
+ 
+- Think of it as your own private data center inside AWS
+- You control the IP ranges, subnets, routing, and security
+- Nothing gets in or out unless you explicitly allow it
+- Every AWS account gets a **default VPC** in each region
+```
+AWS Region
+└── VPC (your isolated network, e.g. 10.0.0.0/16)
+    ├── Availability Zone A
+    │   ├── Public Subnet  (10.0.1.0/24)
+    │   └── Private Subnet (10.0.2.0/24)
+    └── Availability Zone B
+        ├── Public Subnet  (10.0.3.0/24)
+        └── Private Subnet (10.0.4.0/24)
+```
+ 
+---
+ 
+## 2.0 — CIDR Notation
+ 
+**CIDR = Classless Inter-Domain Routing**
+ 
+Written as: `IP_Address / prefix_length`
+Example: `10.0.0.0/16`
+ 
+The prefix (the number after `/`) tells you how many bits are "fixed" (the network part).
+The remaining bits are for hosts.
+ 
+### Formula for usable hosts:
+```
+Usable hosts = 2^(32 - prefix) - 2
+```
+We subtract 2 because:
+- First address = **Network address** (identifies the subnet)
+- Last address  = **Broadcast address** (sends to all hosts)
+### CIDR Cheat Sheet
+ 
+| CIDR | Total IPs | Usable Hosts | Common Use |
+|------|-----------|--------------|------------|
+| /32  | 1         | 1 (itself)   | Single host rule in Security Group |
+| /30  | 4         | 2            | Point-to-point links |
+| /28  | 16        | 14           | Small subnet |
+| /27  | 32        | 30           | Small subnet |
+| /24  | 256       | 254          | Standard subnet (most common) |
+| /20  | 4,096     | 4,094        | Medium VPC subnet |
+| /16  | 65,536    | 65,534       | Large VPC CIDR |
+ 
+### Practice Drill
+ 
+**How many usable hosts in a /28?**
+```
+2^(32 - 28) - 2
+= 2^4 - 2
+= 16 - 2
+= 14 usable hosts
+```
+ 
+**How many usable hosts in a /20?**
+```
+2^(32 - 20) - 2
+= 2^12 - 2
+= 4096 - 2
+= 4094 usable hosts
+```
+ 
+---
+ 
+## 3.0 — Public vs Private Subnets
+ 
+| Feature | Public Subnet | Private Subnet |
+|---------|--------------|----------------|
+| Internet access | Direct (via IGW) | Indirect (via NAT) |
+| Has route to IGW | ✅ Yes | ❌ No |
+| Resources | Load Balancers, Bastion Hosts | App servers, Databases |
+| Gets public IP | Can auto-assign | No |
+ 
+### Internet Gateway (IGW)
+- Attached to the VPC
+- Allows **two-way** traffic between public subnet and the internet
+- No bandwidth limit, no availability concern (AWS manages it)
+### NAT Gateway
+- Sits in a **public subnet**
+- Allows **private subnet** resources to initiate outbound internet traffic
+- The internet **cannot initiate** connections back (one-way outbound only)
+- Used for: downloading patches, calling external APIs from private servers
+```
+Private Subnet → NAT Gateway (in Public Subnet) → IGW → Internet
+Internet       → IGW → ❌ (cannot reach private subnet directly)
+```
+ 
+---
+ 
+## 4.0 — Route Tables
+ 
+A **Route Table** is a set of rules that determines where network traffic is directed.
+ 
+- Every subnet is associated with exactly one route table
+- A route table can be associated with multiple subnets
+- The VPC has a **main route table** by default
+### Example: Public Subnet Route Table
+ 
+| Destination | Target | Meaning |
+|-------------|--------|---------|
+| 10.0.0.0/16 | local  | Traffic within VPC stays local |
+| 0.0.0.0/0   | igw-xxxx | All other traffic → Internet Gateway |
+ 
+### Example: Private Subnet Route Table
+ 
+| Destination | Target | Meaning |
+|-------------|--------|---------|
+| 10.0.0.0/16 | local  | Traffic within VPC stays local |
+| 0.0.0.0/0   | nat-xxxx | All other traffic → NAT Gateway |
+ 
+> ⚠️ **Key difference:** Public subnets have `0.0.0.0/0 → IGW`. Private subnets have `0.0.0.0/0 → NAT`.
+ 
+---
+ 
+## 5.0 — Security Groups vs NACLs
+ 
+These are two layers of security filtering in a VPC.
+ 
+| Feature | Security Group | NACL (Network ACL) |
+|---------|---------------|---------------------|
+| Level | Instance level | Subnet level |
+| State | **Stateful** | **Stateless** |
+| Rules | Allow only | Allow AND Deny |
+| Evaluation | All rules evaluated | Rules evaluated in number order |
+| Default | Deny all inbound, allow all outbound | Allow all in/out |
+ 
+### Stateful vs Stateless explained:
+- **Stateful (SG):** If you allow inbound port 80, the return traffic is automatically allowed — no need to add an outbound rule.
+- **Stateless (NACL):** You must explicitly allow BOTH inbound AND outbound for each connection. Return traffic is NOT automatic.
+### When to use each:
+- **Security Groups** → primary defense for EC2, RDS, Lambda (most common)
+- **NACLs** → subnet-wide emergency blocks (e.g. blocking a known malicious IP range fast)
+---
+ 
+## 6.0 — Designing a VPC Layout
+ 
+### Standard 2 AZ VPC Design (for high availability):
+ 
+```
+VPC: 10.0.0.0/16
+│
+├── Availability Zone A (ap-south-1a)
+│   ├── Public Subnet A:  10.0.1.0/24  → Route to IGW
+│   └── Private Subnet A: 10.0.2.0/24  → Route to NAT GW
+│
+└── Availability Zone B (ap-south-1b)
+    ├── Public Subnet B:  10.0.3.0/24  → Route to IGW
+    └── Private Subnet B: 10.0.4.0/24  → Route to NAT GW
+ 
+Internet Gateway: attached to VPC
+NAT Gateway: placed in Public Subnet A (or one per AZ for full HA)
+```
+ 
+### Why 2 Availability Zones?
+- AZs are physically separate data centers
+- If one AZ goes down, your app still runs in the other
+- AWS recommends **minimum 2 AZs** for production workloads
+---
+ 
+## 7.0 — boto3: Describing VPCs and Subnets
+ 
+Read-only operations to inspect your sandbox VPC setup.
+ 
+```python
+import boto3
+ 
+# Always use environment variables — never hardcode credentials
+ec2 = boto3.client('ec2', region_name='ap-south-1')
+ 
+# List all VPCs in the account
+def list_vpcs():
+    response = ec2.describe_vpcs()
+    for vpc in response['Vpcs']:
+        vpc_id    = vpc['VpcId']
+        cidr      = vpc['CidrBlock']
+        is_default = vpc.get('IsDefault', False)
+        # Get the Name tag if it exists
+        name = next(
+            (tag['Value'] for tag in vpc.get('Tags', []) if tag['Key'] == 'Name'),
+            'No Name'
+        )
+        print(f"VPC: {vpc_id} | CIDR: {cidr} | Name: {name} | Default: {is_default}")
+ 
+# List all subnets
+def list_subnets():
+    response = ec2.describe_subnets()
+    for subnet in response['Subnets']:
+        subnet_id        = subnet['SubnetId']
+        vpc_id           = subnet['VpcId']
+        cidr             = subnet['CidrBlock']
+        az               = subnet['AvailabilityZone']
+        available_ips    = subnet['AvailableIpAddressCount']
+        public_subnet    = subnet['MapPublicIpOnLaunch']
+        name = next(
+            (tag['Value'] for tag in subnet.get('Tags', []) if tag['Key'] == 'Name'),
+            'No Name'
+        )
+        print(f"Subnet: {subnet_id} | VPC: {vpc_id} | CIDR: {cidr} | AZ: {az}")
+        print(f"  Name: {name} | Available IPs: {available_ips} | Public: {public_subnet}")
+ 
+list_vpcs()
+print("---")
+list_subnets()
+```
+ 
+### Filter subnets by VPC:
+```python
+def list_subnets_in_vpc(vpc_id):
+    response = ec2.describe_subnets(
+        Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+    )
+    return response['Subnets']
+```
+ 
+### List Route Tables:
+```python
+def list_route_tables():
+    response = ec2.describe_route_tables()
+    for rt in response['RouteTables']:
+        rt_id  = rt['RouteTableId']
+        vpc_id = rt['VpcId']
+        print(f"Route Table: {rt_id} | VPC: {vpc_id}")
+        for route in rt['Routes']:
+            dest   = route.get('DestinationCidrBlock', 'N/A')
+            target = route.get('GatewayId') or route.get('NatGatewayId') or route.get('InstanceId') or 'local'
+            state  = route.get('State', 'unknown')
+            print(f"  {dest} → {target} [{state}]")
+ 
+list_route_tables()
+```
+ 
+> ✅ **Safety rule:** Only use `describe_*` and `list_*` operations in early weeks. Never call `create_*`, `delete_*`, or `modify_*` on sandbox accounts.
+ 
+---
+ 
+## 8.0 — Key Concepts Summary
+ 
+| Concept | One-line definition |
+|---------|---------------------|
+| VPC | Isolated virtual network in AWS |
+| CIDR | IP range notation — defines how many IPs a block has |
+| Subnet | Sub-division of a VPC in one AZ |
+| Public Subnet | Has a route to an Internet Gateway |
+| Private Subnet | No direct internet — uses NAT for outbound |
+| Route Table | Rules deciding where traffic goes |
+| IGW | Allows public internet ↔ VPC communication |
+| NAT Gateway | Allows private subnet → internet (one-way outbound) |
+| Security Group | Stateful, instance-level firewall (Allow only) |
+| NACL | Stateless, subnet-level firewall (Allow + Deny) |
+ 
+---
+ 
+## 9.0 — Quick Reference: CIDR Math
+ 
+```
+/32 → 1 IP    (1 host)
+/30 → 4 IPs   (2 usable)
+/28 → 16 IPs  (14 usable)
+/27 → 32 IPs  (30 usable)
+/26 → 64 IPs  (62 usable)
+/25 → 128 IPs (126 usable)
+/24 → 256 IPs (254 usable)
+/23 → 512 IPs (510 usable)
+/22 → 1,024 IPs
+/20 → 4,096 IPs
+/16 → 65,536 IPs
+```
+ 
+**Mental shortcut:** Each step smaller in prefix doubles the IPs.
+`/24 = 256`, `/23 = 512`, `/22 = 1024` ... go down, multiply by 2.
+ 
+---
+ 
+## 10.0 — TryHackMe: Networking Module Notes
+ 
+> Continue from where you left off in the Networking 101 module.
+ 
+Key topics covered or coming up:
+- OSI Model layers (Physical → Application)
+- TCP/IP model vs OSI
+- How DNS resolution works
+- How DHCP assigns IPs
+- Packet structure and headers
+- ARP (Address Resolution Protocol)
+---
+ 
+*Day 17 complete ✅ | Next: Day 18 — IAM Deep Dive / Python OOP*
