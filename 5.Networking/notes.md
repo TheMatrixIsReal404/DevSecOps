@@ -659,3 +659,385 @@ Key topics covered or coming up:
 ---
  
 *Day 17 complete ✅ | Next: Day 18 — IAM Deep Dive / Python OOP*
+
+---
+ 
+# 🔐 Week 3 — Day 18: OWASP Top 10 & Security Fundamentals
+ 
+> **Today's Goal:** Know all 10 OWASP categories cold — what each one means and one real-world example of each.
+ 
+---
+ 
+## 1.0 — What is OWASP?
+ 
+**OWASP** = Open Web Application Security Project
+- A non-profit community that publishes free security resources
+- The **OWASP Top 10** is the industry-standard list of the most critical web application security risks
+- Updated periodically — current version is **Top 10:2025** (released Jan 2026)
+```
+Why it matters for DevSecOps:
+  Every pipeline you build should check for OWASP risks.
+  Security is NOT just the security team's job — it's baked into Dev + Ops too.
+```
+ 
+---
+ 
+## 2.0 — OWASP Top 10:2025 — All 10 Categories
+ 
+> ⚠️ **Important Note:** This is the 2025 revision (released Jan 2026) — first update since 2021.
+> SSRF was folded into A01 (Broken Access Control), and two new categories were added:
+> A03 (Software Supply Chain Failures) and A10 (Mishandling of Exceptional Conditions).
+ 
+---
+ 
+### A01 — Broken Access Control (absorbs SSRF)
+ 
+**What it means:** Users can act outside their permitted scope — accessing data or functions they shouldn't.
+ 
+**How it happens:**
+- Missing authorization checks on API endpoints
+- Insecure Direct Object References (IDOR) — e.g., changing `?user_id=123` to `?user_id=124` to access another user's data
+- SSRF (Server-Side Request Forgery) — tricking the server into making requests to internal services
+**Real-world example:**
+> **Facebook IDOR (2015):** Researcher could delete any photo on Facebook by manipulating the `photo_id` parameter in an API request — bypassing ownership checks entirely.
+ 
+**Defensive control:**
+- Enforce server-side authorization on EVERY request
+- Deny by default — whitelist what's allowed, not blacklist what's forbidden
+- Use UUIDs instead of sequential IDs
+```python
+# BAD — trusting client-supplied user ID
+def get_profile(user_id):
+    return db.query(f"SELECT * FROM users WHERE id={user_id}")
+ 
+# GOOD — use the authenticated session, not client input
+def get_profile(request):
+    user_id = request.session['authenticated_user_id']  # from server-side session
+    return db.query("SELECT * FROM users WHERE id=?", user_id)
+```
+ 
+---
+ 
+### A02 — Security Misconfiguration
+ 
+**What it means:** Default settings, verbose errors, or unnecessary features left enabled that expose the system.
+ 
+**How it happens:**
+- Default credentials never changed (admin/admin, root/root)
+- S3 buckets left publicly readable
+- Stack traces shown to users (reveals internal paths, library versions)
+- Unnecessary ports/services running
+**Real-world example:**
+> **Capital One Breach (2019):** An AWS WAF misconfiguration allowed SSRF — the attacker queried the EC2 metadata endpoint to steal IAM credentials, then accessed 100M+ customer records from S3.
+ 
+**Defensive control:**
+- Automated config scanning (e.g., AWS Config, Prowler, Checkov)
+- Disable verbose error messages in production
+- Principle of least privilege on all cloud storage
+```bash
+# Check for public S3 buckets (read-only — safe to run)
+aws s3api get-bucket-acl --bucket YOUR_BUCKET_NAME
+aws s3api get-public-access-block --bucket YOUR_BUCKET_NAME
+```
+ 
+---
+ 
+### A03 — Software Supply Chain Failures ⭐ NEW in 2025
+ 
+**What it means:** Compromised dependencies, malicious packages, or CI/CD pipeline attacks that inject bad code into your software.
+ 
+**How it happens:**
+- Malicious npm/PyPI packages (typosquatting — e.g., `requets` instead of `requests`)
+- Compromised upstream library (you didn't write the bad code — your dependency did)
+- CI/CD pipeline with no integrity checks on artifacts
+**Real-world example:**
+> **SolarWinds Attack (2020):** Attackers compromised SolarWinds' build pipeline and inserted a backdoor into the Orion software update. ~18,000 organizations downloaded the malicious update — including US government agencies.
+ 
+**Defensive control:**
+- Pin dependency versions + verify hashes (`pip install --require-hashes`)
+- Use Software Bill of Materials (SBOM) to track all dependencies
+- Sign CI/CD artifacts and verify signatures before deploying
+```bash
+# Generate a requirements.txt with hashes (Python)
+pip-compile --generate-hashes requirements.in
+ 
+# Check for known vulnerabilities in dependencies
+pip install safety
+safety check
+```
+ 
+---
+ 
+### A04 — Cryptographic Failures
+ 
+**What it means:** Weak, missing, or incorrectly implemented encryption — leading to exposure of sensitive data.
+ 
+**How it happens:**
+- Passwords stored as MD5 or SHA1 hashes (these are broken — too fast to brute force)
+- Sensitive data transmitted over HTTP instead of HTTPS
+- Hardcoded API keys or secrets in source code
+- Using ECB mode for block ciphers (deterministic — patterns leak)
+**Real-world example:**
+> **RockYou Breach (2009):** RockYou stored 32 million user passwords in **plaintext** — no hashing at all. The resulting wordlist (`rockyou.txt`) is still the #1 password cracking dictionary used in CTFs today.
+ 
+**Defensive control:**
+- Use **bcrypt**, **scrypt**, or **Argon2** for password hashing (slow by design)
+- Never store secrets in code — use environment variables or a secrets manager (AWS Secrets Manager, HashiCorp Vault)
+- Enforce TLS 1.2+ everywhere
+```python
+# BAD — MD5 is not suitable for passwords
+import hashlib
+hashed = hashlib.md5(password.encode()).hexdigest()
+ 
+# GOOD — bcrypt adds salt + is computationally slow
+import bcrypt
+hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+```
+ 
+---
+ 
+### A05 — Injection
+ 
+**What it means:** Untrusted data is sent to an interpreter (SQL, shell, LDAP, etc.) and executed as a command.
+ 
+**Sub-types:**
+| Type | Example |
+|------|---------|
+| SQL Injection | `' OR 1=1 --` in a login field |
+| XSS (Cross-Site Scripting) | `<script>document.cookie</script>` in a comment field |
+| Command Injection | `; rm -rf /` appended to a filename input |
+| LDAP Injection | Manipulating LDAP queries for auth bypass |
+ 
+**Real-world example:**
+> **Heartland Payment Systems (2008):** SQL injection on a web form gave attackers access to 130 million credit card numbers. It was the largest data breach in US history at the time.
+ 
+**Defensive control:**
+- **Parameterized queries / prepared statements** — never concatenate user input into SQL
+- Input validation + output encoding
+- WAF (Web Application Firewall) as a defense-in-depth layer
+```python
+# BAD — string concatenation = SQL injection risk
+query = f"SELECT * FROM users WHERE username='{username}'"
+ 
+# GOOD — parameterized query (user input never interpreted as SQL)
+cursor.execute("SELECT * FROM users WHERE username=?", (username,))
+```
+ 
+---
+ 
+### A06 — Insecure Design
+ 
+**What it means:** Flaws baked into the architecture or business logic — security wasn't considered during design, not just implementation.
+ 
+**How it happens:**
+- No threat modeling done during design phase
+- Business logic flaws (e.g., "buy 1 item, enter quantity -1 to get a refund while keeping the item")
+- Missing rate limiting on sensitive endpoints (e.g., password reset)
+**Real-world example:**
+> **Instagram Account Takeover (2019):** The password reset flow sent a 6-digit code via SMS but had no rate limiting on guesses. A researcher could brute-force all 1,000,000 combinations within minutes.
+ 
+**Defensive control:**
+- **Threat modeling** at design time (STRIDE framework: Spoofing, Tampering, Repudiation, Info Disclosure, DoS, Elevation of Privilege)
+- Rate limiting + account lockout on all auth flows
+- Review business logic flows for abuse cases
+---
+ 
+### A07 — Authentication Failures
+ 
+**What it means:** Weaknesses in how identity is verified — broken login, session, or credential management.
+ 
+**How it happens:**
+- Weak/default passwords allowed
+- No MFA on privileged accounts
+- Session tokens that don't expire or are predictable
+- Credentials exposed in URLs or logs
+**Real-world example:**
+> **Zoom Account Takeover (2020):** Credential stuffing attack — attackers took username/password combos leaked from other breaches and tried them on Zoom. 500,000 Zoom accounts were sold on the dark web because users reused passwords.
+ 
+**Defensive control:**
+- Enforce MFA (especially for admin/privileged accounts)
+- Use secure, random session tokens — invalidate on logout
+- Implement brute-force protection (lockout + CAPTCHA)
+---
+ 
+### A08 — Software and Data Integrity Failures
+ 
+**What it means:** Code or data updates are applied without verifying they haven't been tampered with.
+ 
+**How it happens:**
+- Auto-update mechanisms that don't verify signatures
+- Insecure deserialization — attacker sends a crafted serialized object that executes code when deserialized
+- Using plugins/libraries from untrusted CDNs without Subresource Integrity (SRI) checks
+**Real-world example:**
+> **ASUS Live Update Attack (2019, "Operation ShadowHammer"):** Attackers compromised ASUS's official software update server and pushed a backdoored update — signed with legitimate ASUS certificates — to ~1 million machines.
+ 
+**Defensive control:**
+- Verify digital signatures on all software updates
+- Avoid deserializing untrusted data — use safe formats (JSON) over binary serialization (pickle in Python)
+- Use SRI hashes for external scripts
+```html
+<!-- SRI check — browser verifies the script hash before running it -->
+<script src="https://cdn.example.com/lib.js"
+        integrity="sha384-abc123..."
+        crossorigin="anonymous"></script>
+```
+ 
+---
+ 
+### A09 — Security Logging & Alerting Failures
+ 
+**What it means:** Systems log without alerting, or don't log enough detail — breaches go undetected for months/years.
+ 
+**How it happens:**
+- Login failures not logged
+- Logs exist but no one monitors them / no alerts configured
+- Logs stored on the same system that was compromised (attacker deletes them)
+- PII or credentials accidentally written to logs
+**Real-world example:**
+> **Equifax Breach (2017):** Attackers had access for **78 days** before detection. The breach of 147 million records went unnoticed partly because an SSL inspection certificate had expired — decrypted traffic containing the intrusion was no longer being inspected or alerted on.
+ 
+**Defensive control:**
+- Centralized logging (ship logs to a SIEM — e.g., Splunk, AWS CloudWatch, ELK Stack)
+- Alert on anomalies: repeated login failures, unusual data exports, privilege escalations
+- Store logs in write-once, tamper-evident storage
+```bash
+# AWS CloudTrail — always-on audit log of API calls (read-only check)
+aws cloudtrail describe-trails
+aws cloudtrail get-trail-status --name YOUR_TRAIL_NAME
+```
+ 
+---
+ 
+### A10 — Mishandling of Exceptional Conditions ⭐ NEW in 2025
+ 
+**What it means:** Error states and edge cases that cause the system to leak data, crash insecurely, or "fail open" (grant access when it should deny).
+ 
+**How it happens:**
+- Unhandled exceptions that display stack traces (leaking internal paths, library versions, DB schema)
+- "Fail open" logic — if auth check throws an exception, code falls through to grant access
+- Integer overflows / divide-by-zero causing unexpected behavior
+**Real-world example:**
+> **Gitlab "Fail Open" Bug (2023):** A SAML authentication library exception caused GitLab's auth handler to fail open — any unauthenticated user could sign in as any account by triggering the error condition.
+ 
+**Defensive control:**
+- **Always fail closed** — if something goes wrong, deny access by default
+- Catch exceptions explicitly; return generic error messages to users, log details server-side
+- Test error paths, not just happy paths
+```python
+# BAD — fails open if auth check throws an exception
+try:
+    is_admin = check_admin_permission(user)
+except:
+    pass  # silently continues — user proceeds as if authorized!
+ 
+# GOOD — fails closed
+try:
+    is_admin = check_admin_permission(user)
+except Exception as e:
+    logger.error(f"Auth check failed: {e}")
+    return 403  # deny access on any error
+```
+ 
+---
+ 
+## 3.0 — Quick Reference Table
+ 
+| # | Category | One-Line Description | Key Defense |
+|---|----------|---------------------|-------------|
+| A01 | Broken Access Control | Users exceed their permissions | Server-side authz on every request |
+| A02 | Security Misconfiguration | Default/insecure settings left in place | Automated config scanning |
+| A03 | Supply Chain Failures | Malicious dependencies / compromised pipeline | Pin deps + verify hashes + SBOM |
+| A04 | Cryptographic Failures | Weak/missing encryption, hardcoded keys | bcrypt for passwords, secrets manager |
+| A05 | Injection | User input executed as a command | Parameterized queries, input validation |
+| A06 | Insecure Design | Security flaws in architecture/logic | Threat modeling (STRIDE) |
+| A07 | Authentication Failures | Weak login, session, credential management | MFA + secure sessions |
+| A08 | Data Integrity Failures | Unverified updates, insecure deserialization | Signature verification, avoid pickle |
+| A09 | Logging & Alerting Failures | Breaches go undetected | SIEM + anomaly alerts |
+| A10 | Exceptional Conditions | Errors leak data or fail open | Fail closed + catch all exceptions |
+ 
+---
+ 
+## 4.0 — OWASP in a DevSecOps Pipeline
+ 
+```
+Developer writes code
+        │
+        ▼
+   [SAST scan]  ←── Static analysis catches A05 (Injection), A04 (hardcoded keys)
+        │
+        ▼
+   [SCA scan]   ←── Dependency check catches A03 (Supply Chain), A04 (known vuln libs)
+        │
+        ▼
+  [Code Review] ←── Human review catches A06 (Insecure Design), A07 (Auth logic)
+        │
+        ▼
+   [DAST scan]  ←── Dynamic testing catches A01 (Access Control), A02 (Misconfig)
+        │
+        ▼
+  [Production]  ←── Monitoring catches A09 (Logging failures), A10 (Error leaks)
+```
+ 
+**Tools map:**
+| Stage | Tool | OWASP coverage |
+|-------|------|----------------|
+| SAST | Semgrep, Bandit (Python) | A05, A04 |
+| SCA | `safety`, Dependabot, Snyk | A03, A04 |
+| DAST | OWASP ZAP, Burp Suite | A01, A02, A05 |
+| Secrets | truffleHog, git-secrets | A04 |
+| IaC scan | Checkov, Prowler | A02 |
+| Monitoring | CloudWatch, Splunk | A09 |
+ 
+---
+ 
+## 5.0 — Hands-On Practice
+ 
+### Task 1: Map a breach to OWASP
+ 
+Pick any breach below and identify which OWASP categories apply:
+- Uber breach (2022) — hint: A02, A07, A09
+- Log4Shell (2021) — hint: A03, A05, A08
+- Twitter Bitcoin scam (2020) — hint: A07, A06
+### Task 2: TryHackMe — Cyber Security 101
+ 
+Continue the **Web Fundamentals** module on TryHackMe.
+Focus rooms that map to today's content:
+- **OWASP Top 10** room (direct practice for every category)
+- **SQL Injection** room → A05
+- **File Inclusion** room → A01, A05
+### Task 3: Scan your own code
+ 
+If you have any Python scripts from Days 15–17, run:
+```bash
+# Install Bandit (Python SAST tool)
+pip install bandit
+ 
+# Scan a file
+bandit -r your_script.py
+ 
+# Scan a whole directory
+bandit -r ./4.Python/
+```
+ 
+---
+ 
+## 6.0 — Key Terms Glossary
+ 
+| Term | Meaning |
+|------|---------|
+| OWASP | Open Web Application Security Project |
+| IDOR | Insecure Direct Object Reference — accessing someone else's resource by changing an ID |
+| SSRF | Server-Side Request Forgery — making the server fetch internal resources |
+| SAST | Static Application Security Testing — scanning source code |
+| DAST | Dynamic Application Security Testing — testing a running app |
+| SCA | Software Composition Analysis — checking dependencies for vulnerabilities |
+| SBOM | Software Bill of Materials — inventory of all components in your software |
+| SIEM | Security Information and Event Management — centralized log + alert system |
+| Fail Open | Granting access when an error occurs (BAD) |
+| Fail Closed | Denying access when an error occurs (GOOD) |
+| STRIDE | Threat modeling framework: Spoofing, Tampering, Repudiation, Info Disclosure, DoS, Elevation |
+| Credential Stuffing | Using leaked username/password combos from one breach to attack other services |
+ 
+---
+ 
+*Day 18 complete ✅ | Next: Day 19 — IAM Deep Dive / Python OOP*
